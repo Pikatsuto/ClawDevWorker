@@ -5,33 +5,85 @@ on:
     branches: [main]
     paths:
       - 'services/**'
+      - 'scripts/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Force rebuild all services (ignore cache)'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/pikatsuto
 
 jobs:
-  # Dynamic discovery of services to build
   discover:
     runs-on: ubuntu-latest
     outputs:
-      services: ${{ steps.scan.outputs.services }}
+      matrix: ${{ steps.changes.outputs.matrix }}
+      all_services: ${{ steps.changes.outputs.all }}
     steps:
       - uses: actions/checkout@v6
-      - id: scan
+        with:
+          fetch-depth: 2
+
+      - id: changes
         run: |
-          # Discover all services with a Dockerfile
-          services=$(find services -maxdepth 2 -name Dockerfile \
-            | sed 's|/Dockerfile||' \
-            | sed 's|services/||' \
-            | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "services=$services" >> $GITHUB_OUTPUT
-          echo "Detected services: $services"
+          FORCE="${{ inputs.force_all || 'false' }}"
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "FORCE_ALL")
+
+          # Workflow changed or force → rebuild everything
+          REBUILD_ALL=false
+          if echo "$CHANGED" | grep -q '\.github/workflows/build\.yml' || [ "$FORCE" = "true" ] || echo "$CHANGED" | grep -q "FORCE_ALL"; then
+            REBUILD_ALL=true
+          fi
+
+          ALL="[]"
+          MATRIX="[]"
+
+          # Iterate over every service that has a Dockerfile
+          for dockerfile in services/*/Dockerfile; do
+            svc=$(echo "$dockerfile" | cut -d/ -f2)
+            ALL=$(echo "$ALL" | jq -c --arg s "$svc" '. + [$s]')
+
+            if [ "$REBUILD_ALL" = "true" ]; then
+              MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
+              echo "  ✓ $svc — forced rebuild"
+              continue
+            fi
+
+            # Parse all COPY source dirs from the Dockerfile (relative to build context)
+            WATCH_DIRS=$(grep -E '^\s*COPY\s' "$dockerfile" \
+              | grep -v '\-\-from=' \
+              | sed -E 's/^\s*COPY\s+//' \
+              | awk '{print $1}' \
+              | sort -u)
+
+            NEEDS_BUILD=false
+            for dir in $WATCH_DIRS; do
+              if echo "$CHANGED" | grep -q "^${dir}"; then
+                NEEDS_BUILD=true
+                break
+              fi
+            done
+
+            if [ "$NEEDS_BUILD" = "true" ]; then
+              MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
+              echo "  ✓ $svc — changed"
+            else
+              echo "  ⊘ $svc — skipped"
+            fi
+          done
+
+          echo "all=$ALL" >> $GITHUB_OUTPUT
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Build: $MATRIX"
 
   build:
     needs: discover
+    if: ${{ needs.discover.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,7 +91,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJson(needs.discover.outputs.services) }}
+        service: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -70,8 +122,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: |
+            type=gha,scope=${{ matrix.service }}
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/cdw-${{ matrix.service }}:buildcache
+          cache-to: |
+            type=gha,mode=max,scope=${{ matrix.service }}
+            type=inline
 
       - name: Write status
         if: always()
@@ -104,13 +160,20 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo '${{ needs.discover.outputs.services }}' \
-            | jq -r '.[]' | while read svc; do
-              [ -z "$svc" ] && continue
-              status_file="/tmp/build-status/$svc"
+
+          MATRIX='${{ needs.discover.outputs.matrix }}'
+          ALL='${{ needs.discover.outputs.all_services }}'
+
+          echo "$ALL" | jq -r '.[]' | while read svc; do
+            [ -z "$svc" ] && continue
+            status_file="/tmp/build-status/$svc"
+            if echo "$MATRIX" | jq -e --arg s "$svc" 'index($s) != null' > /dev/null 2>&1; then
               if [ -f "$status_file" ] && [ "$(cat "$status_file")" = "success" ]; then
-                echo "| cdw-$svc | ✅ |" >> $GITHUB_STEP_SUMMARY
+                echo "| cdw-$svc | ✅ built |" >> $GITHUB_STEP_SUMMARY
               else
-                echo "| cdw-$svc | ❌ |" >> $GITHUB_STEP_SUMMARY
+                echo "| cdw-$svc | ❌ failed |" >> $GITHUB_STEP_SUMMARY
               fi
-            done
+            else
+              echo "| cdw-$svc | ⊘ skipped |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
