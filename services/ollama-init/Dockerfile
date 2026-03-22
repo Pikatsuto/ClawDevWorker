@@ -1,17 +1,17 @@
 ###############################################################################
-# ollama-init — Service éphémère de téléchargement des modèles
+# ollama-init — Ephemeral model download service
 #
-# ATOMIC : pull-models.sh est baked dans l'image, aucun bind mount requis.
-# restart: "no" — s'exécute une seule fois au premier docker compose up.
-# Les runs suivants sont quasi-instantanés (modèles déjà présents détectés).
+# ATOMIC: pull-models.sh is baked into the image, no bind mount required.
+# restart: "no" — runs once on first docker compose up.
+# Subsequent runs are near-instant (already present models detected).
 ###############################################################################
 
 FROM alpine:3.19
 
-# Dépendances : curl pour les appels API Ollama + HuggingFace, bash pour le script
+# Dependencies: curl for Ollama + HuggingFace API calls, bash for the script
 RUN apk add --no-cache bash curl jq
 
-# Script baked dans l'image — jamais monté en bind mount
+# Script baked into the image — never bind mounted
 COPY scripts/pull-models.sh /pull-models.sh
 RUN chmod +x /pull-models.sh
 

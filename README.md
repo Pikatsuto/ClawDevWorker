@@ -1,8 +1,8 @@
 # ClawDevWorker v14
 
-Stack autonome de développement multi-agent : Code Server éphémère + Ollama + agents OpenClaw spécialistes sur GPU local.
+Autonomous multi-agent development stack: ephemeral Code Server + Ollama + specialist OpenClaw agents on local GPU.
 
-Les agents reçoivent des issues Forgejo ou GitHub, les analysent, codent, reviewent en pipeline RBAC, et ouvrent des PRs — sans intervention humaine. L'humain garde le contrôle via le chat et les sessions Code Server interactives.
+Agents receive Forgejo or GitHub issues, analyze them, code, review through an RBAC pipeline, and open PRs — without human intervention. Humans retain control via the chat and interactive Code Server sessions.
 
 ---
 
@@ -11,55 +11,55 @@ Les agents reçoivent des issues Forgejo ou GitHub, les analysent, codent, revie
 ```
 Internet
  └── chat.example.com          → Traefik → openclaw-chat
- └── dev-<id>.DEV_DOMAIN       → Traefik → container Code Server éphémère
- └── ssh.dev-<id>.DEV_DOMAIN   → Traefik → sshd du container (si /ssh-key configurée)
+ └── dev-<id>.DEV_DOMAIN       → Traefik → ephemeral Code Server container
+ └── ssh.dev-<id>.DEV_DOMAIN   → Traefik → container sshd (if /ssh-key configured)
 ```
 
-### Sessions dev — éphémère vs persistant
+### Dev sessions — ephemeral vs persistent
 
 ```
-ÉPHÉMÈRE (--rm, détruit à /dev release ou idle 30min) :
-  Paquets système, node_modules, build artifacts
+EPHEMERAL (--rm, destroyed on /dev release or 30min idle):
+  System packages, node_modules, build artifacts
 
-PERSISTANT (volumes par user) :
-  Profil VSCode (settings, keybindings)
-  Extensions installées
-  Config OpenClaw + clé SSH
+PERSISTENT (per-user volumes):
+  VSCode profile (settings, keybindings)
+  Installed extensions
+  OpenClaw config + SSH key
 
-PERSISTANT (git) :
+PERSISTENT (git):
   Code → Forgejo / GitHub
-  Environnement → .devcontainer/devcontainer.json dans le repo
+  Environment → .devcontainer/devcontainer.json in the repo
 
-PERSISTANT (volume project_data partagé) :
-  Mémoire sémantique par projet (SQLite)
+PERSISTENT (shared project_data volume):
+  Per-project semantic memory (SQLite)
   Session handoffs
-  Index codebase incrémental
+  Incremental codebase index
 ```
 
-### GPU scheduler — 3 modes de cohabitation
+### GPU scheduler — 3 cohabitation modes
 
 ```
-AGENT_ACTIVE     → agents autonomes libres, toute la VRAM disponible
-HUMAN_SHARED     → session dev active, agents continuent si VRAM ≥ 2GB libre
-HUMAN_EXCLUSIVE  → VRAM pleine, agents mis en pause (queue)
+AGENT_ACTIVE     → autonomous agents free, all VRAM available
+HUMAN_SHARED     → dev session active, agents continue if VRAM ≥ 2GB free
+HUMAN_EXCLUSIVE  → VRAM full, agents paused (queued)
 ```
 
-Upgrade/downgrade de modèle :
-- **Chat / Code Server** — proposition affichée dans la session, `/upgrade` ou `/downgrade` pour confirmer
-- **Worker autonome** — upgrade/downgrade silencieux selon score de complexité
+Model upgrade/downgrade:
+- **Chat / Code Server** — suggestion displayed in session, `/upgrade` or `/downgrade` to confirm
+- **Autonomous worker** — silent upgrade/downgrade based on complexity score
 
-### 12 agents spécialistes
+### 12 specialist agents
 
-**Techniques :** `architect` `frontend` `backend` `fullstack` `devops` `security` `qa` `doc`
+**Technical:** `architect` `frontend` `backend` `fullstack` `devops` `security` `qa` `doc`
 
-**Métier :** `marketing` `design` `product` `bizdev`
+**Business:** `marketing` `design` `product` `bizdev`
 
-Chaque spécialiste a son system prompt dédié. Le CPU analyse l'issue et détermine les spécialistes nécessaires. Les labels Forgejo/GitHub servent d'override manuel.
+Each specialist has a dedicated system prompt. The CPU analyzes the issue and determines the required specialists. Forgejo/GitHub labels serve as manual override.
 
-### Pipeline RBAC configurable par projet
+### Per-project configurable RBAC pipeline
 
 ```yaml
-# .coderclaw/rules.yaml dans chaque repo
+# .coderclaw/rules.yaml in each repo
 pipeline:
   gates: [architect, fullstack, security, qa, doc]
   require_all: true
@@ -67,203 +67,203 @@ pipeline:
   retry_upgrade: true
 ```
 
-Gates non listés = ignorés. `require_all: false` = gates en parallèle sans blocage.
+Unlisted gates = ignored. `require_all: false` = parallel gates without blocking.
 
-### DAG de dépendances entre issues
+### Issue dependency DAG
 
 ```markdown
 ## US-003 — Dashboard
-**Dépend de :** US-001, US-002
+**Depends on:** US-001, US-002
 ```
 
-L'orchestrateur attend que US-001 et US-002 soient `Done` avant de démarrer US-003.
+The orchestrator waits for US-001 and US-002 to be `Done` before starting US-003.
 
-### Modèle cerveau humain
+### Human brain model
 
 ```
 Amygdala    → loop-detect + handleGateFail + escalateToHuman
-Hippocampus → semantic-memory + session-handoff + codebase-index incrémental
-Cortex      → orchestrateur + GPU scheduler + routing 12 spécialistes + DAG + RBAC
+Hippocampus → semantic-memory + session-handoff + incremental codebase-index
+Cortex      → orchestrator + GPU scheduler + routing 12 specialists + DAG + RBAC
 ```
 
 ---
 
-## Commandes principales
+## Main commands
 
-### Sessions dev
-
-```
-/dev create owner/repo              → Code Server éphémère avec repo cloné
-/dev create owner/repo --password   → avec authentification
-/dev release                        → ferme la session
-/dev status                         → sessions actives et URLs
-```
-
-Si `/ssh-key` configurée, chaque session expose aussi un accès SSH compatible VS Code Desktop, Cursor, Windsurf et JetBrains Gateway.
-
-### Clé SSH (accès IDE natif)
+### Dev sessions
 
 ```
-/ssh-key set <clef_publique>        → sauvegarde pour toutes les sessions
-/ssh-key status                     → vérifie si configurée
-/ssh-key clear                      → supprime
+/dev create owner/repo              → ephemeral Code Server with cloned repo
+/dev create owner/repo --password   → with authentication
+/dev release                        → close the session
+/dev status                         → active sessions and URLs
 ```
 
-### Initialisation projet
+If `/ssh-key` is configured, each session also exposes SSH access compatible with VS Code Desktop, Cursor, Windsurf and JetBrains Gateway.
+
+### SSH key (native IDE access)
 
 ```
-/spec init owner/repo               → BMAD → PRD + Architecture + User Stories → issues Forgejo
-/spec status owner/repo             → état du pipeline
+/ssh-key set <public_key>           → save for all sessions
+/ssh-key status                     → check if configured
+/ssh-key clear                      → remove
 ```
 
-### Token git utilisateur
+### Project initialization
 
 ```
-/token set <token>                  → token personnel (pour créer repos sur son compte)
+/spec init owner/repo               → BMAD → PRD + Architecture + User Stories → Forgejo issues
+/spec status owner/repo             → pipeline status
+```
+
+### User git token
+
+```
+/token set <token>                  → personal token (to create repos on your account)
 /token status
 /token clear
 ```
 
-### Contexte projet
+### Project context
 
 ```
-/project select <nom>               → charge mémoire + handoff + rules
-/project status                     → issues et PRs en cours
-/project code                       → code en lecture seule
-/project list                       → liste les projets
+/project select <name>              → load memory + handoff + rules
+/project status                     → current issues and PRs
+/project code                       → read-only code
+/project list                       → list projects
 ```
 
 ### Session handoff
 
 ```
-/handoff                            → sauvegarde état complet de la session
-/resume latest                      → reprend la dernière session
-/resume <id>                        → reprend une session spécifique
+/handoff                            → save complete session state
+/resume latest                      → resume the last session
+/resume <id>                        → resume a specific session
 ```
 
-### Mémoire sémantique
+### Semantic memory
 
 ```
-/remember <query>                   → recherche dans la mémoire du projet
-/learn <fait>                       → mémorise une décision
-/memory list                        → entrées récentes
+/remember <query>                   → search project memory
+/learn <fact>                       → memorize a decision
+/memory list                        → recent entries
 ```
 
 ### Codebase
 
 ```
-/analyze                            → mise à jour index incrémental (git-diff)
-/analyze --full                     → scan complet forcé
-/search <query>                     → recherche dans l'index
-/impact <fichier>                   → impact radius avant modification
+/analyze                            → incremental index update (git-diff)
+/analyze --full                     → forced full scan
+/search <query>                     → search the index
+/impact <file>                      → impact radius before modification
 ```
 
-### Staged diff (sessions interactives)
+### Staged diff (interactive sessions)
 
 ```
-/diff                               → affiche les changements en attente
-/diff src/auth.ts                   → diff d'un fichier
-/accept                             → commit atomique de tous les changements
-/accept src/auth.ts                 → commit d'un fichier
-/reject                             → annule tous les changements
+/diff                               → show pending changes
+/diff src/auth.ts                   → diff a single file
+/accept                             → atomic commit of all changes
+/accept src/auth.ts                 → commit a single file
+/reject                             → discard all changes
 ```
 
 ### GPU
 
 ```
-/gpu status                         → VRAM libre, mode, slots actifs
-/gpu models                         → modèles disponibles
+/gpu status                         → free VRAM, mode, active slots
+/gpu models                         → available models
 ```
 
 ---
 
 ## Devcontainer.json
 
-Ajouter `.devcontainer/devcontainer.json` dans le repo pour personnaliser l'environnement :
+Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 
 ```json
 {
-  "name": "Mon projet",
+  "name": "My project",
   "postCreateCommand": "npm install",
   "containerEnv": { "NODE_ENV": "development" },
   "forwardPorts": [3000, 5173]
 }
 ```
 
-`postCreateCommand` s'exécute une seule fois par version du fichier. Modifier + commiter → re-exécuté à la prochaine session.
+`postCreateCommand` runs once per file version. Modify + commit → re-executed on the next session.
 
 ---
 
 ## Services
 
-| Service | Image | Rôle |
+| Service | Image | Role |
 |---------|-------|------|
 | `ollama` | `ollama/ollama:latest` | GPU (RTX 2080 Ti + GTX 1660) |
 | `ollama-cpu` | `ollama/ollama:latest` | CPU orchestration |
-| `ollama-init` | `cdw-ollama-init:latest` | Téléchargement modèles (éphémère) |
-| `openclaw-agent` | `cdw-agent:latest` | Scheduler + orchestrateur + webhooks |
-| `openclaw-chat` | `cdw-chat:latest` | Interface chat + commandes |
-| `devcontainer` | `cdw-devcontainer:latest` | Sessions Code Server (spawné dynamiquement) |
-| `devdocs` | `freecodecamp/devdocs` | Documentation offline |
-| `searxng` | `cdw-searxng:latest` | Moteur de recherche local |
-| `browserless` | `cdw-browserless:latest` | Browser headless |
-| `mcp-docs` | `cdw-mcp-docs:latest` | MCP server documentation |
-| `cdw-squid` | `cdw-squid:latest` | Proxy sortant agents |
+| `ollama-init` | `cdw-ollama-init:latest` | Model download (ephemeral) |
+| `openclaw-agent` | `cdw-agent:latest` | Scheduler + orchestrator + webhooks |
+| `openclaw-chat` | `cdw-chat:latest` | Chat interface + commands |
+| `devcontainer` | `cdw-devcontainer:latest` | Code Server sessions (dynamically spawned) |
+| `devdocs` | `freecodecamp/devdocs` | Offline documentation |
+| `searxng` | `cdw-searxng:latest` | Local search engine |
+| `browserless` | `cdw-browserless:latest` | Headless browser |
+| `mcp-docs` | `cdw-mcp-docs:latest` | MCP documentation server |
+| `cdw-squid` | `cdw-squid:latest` | Agent outbound proxy |
 
 ---
 
-## Variables d'environnement
+## Environment variables
 
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `CHAT_DOMAIN` | — | Domaine openclaw-chat |
-| `DEV_DOMAIN` | — | Domaine wildcard sessions dev (`*.DEV_DOMAIN`) |
-| `OPENCLAW_GATEWAY_PASSWORD` | — | Mot de passe chat |
-| `GIT_PROVIDER_1` | `forgejo` | Type provider 1 |
-| `GIT_PROVIDER_1_URL` | — | URL Forgejo |
-| `GIT_PROVIDER_1_TOKEN` | — | Token compte agent |
-| `GIT_PROVIDER_2` | — | `github` si GitHub App activé |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHAT_DOMAIN` | — | openclaw-chat domain |
+| `DEV_DOMAIN` | — | Wildcard domain for dev sessions (`*.DEV_DOMAIN`) |
+| `OPENCLAW_GATEWAY_PASSWORD` | — | Chat password |
+| `GIT_PROVIDER_1` | `forgejo` | Provider 1 type |
+| `GIT_PROVIDER_1_URL` | — | Forgejo URL |
+| `GIT_PROVIDER_1_TOKEN` | — | Agent account token |
+| `GIT_PROVIDER_2` | — | `github` if GitHub App enabled |
 | `GIT_PROVIDER_2_APP_ID` | — | GitHub App ID |
-| `GIT_PROVIDER_2_PRIVATE_KEY_B64` | — | Clé privée GitHub App (base64) |
-| `AGENT_GIT_LOGIN` | `agent` | Login compte agent git |
+| `GIT_PROVIDER_2_PRIVATE_KEY_B64` | — | GitHub App private key (base64) |
+| `AGENT_GIT_LOGIN` | `agent` | Agent git account login |
 | `MODEL_COMPLEX` | `qwen3.5:27b-q3_k_m` | Score ≥ 70 |
 | `MODEL_STANDARD` | `qwen3.5:9b` | Score 30–70 |
 | `MODEL_LIGHT` | `qwen3.5:4b` | Score 10–30 |
 | `MODEL_TRIVIAL` | `qwen3.5:2b` | Score < 10 |
 | `MODEL_CPU` | `qwen3.5:0.8b` | CPU orchestration |
-| `MODEL_<ROLE>` | — | Override par rôle (ex: `MODEL_MARKETING=mistral:7b`) |
-| `DEVCONTAINER_IMAGE` | `cdw-devcontainer:latest` | Image sessions dev |
-| `DEVCONTAINER_MEMORY` | `4g` | RAM par session |
-| `DEVCONTAINER_CPUS` | `2.0` | CPUs par session |
-| `DEV_IDLE_MS` | `1800000` | Timeout inactivité (30min) |
-| `DEV_NETWORK` | `coolify` | Réseau Docker pour Traefik |
-| `GATE_MAX_RETRIES` | `3` | Retries avant escalade humaine |
-| `LOOP_DETECT_THRESHOLD` | `2` | Hash répété → boucle détectée |
-| `UPGRADE_THRESHOLD` | `30` | Score delta avant proposition upgrade |
-| `DOWNGRADE_STREAK_MAX` | `3` | Messages bas de suite avant downgrade |
+| `MODEL_<ROLE>` | — | Per-role override (e.g. `MODEL_MARKETING=mistral:7b`) |
+| `DEVCONTAINER_IMAGE` | `cdw-devcontainer:latest` | Dev session image |
+| `DEVCONTAINER_MEMORY` | `4g` | RAM per session |
+| `DEVCONTAINER_CPUS` | `2.0` | CPUs per session |
+| `DEV_IDLE_MS` | `1800000` | Idle timeout (30min) |
+| `DEV_NETWORK` | `coolify` | Docker network for Traefik |
+| `GATE_MAX_RETRIES` | `3` | Retries before human escalation |
+| `LOOP_DETECT_THRESHOLD` | `2` | Repeated hash → loop detected |
+| `UPGRADE_THRESHOLD` | `30` | Score delta before upgrade suggestion |
+| `DOWNGRADE_STREAK_MAX` | `3` | Consecutive low messages before downgrade |
 
 ---
 
-## Checklist déploiement
+## Deployment checklist
 
-- [ ] DNS wildcard `*.DEV_DOMAIN` → IP serveur
-- [ ] Traefik configuré pour wildcard TLS
-- [ ] `.env` rempli depuis `.env.example`
+- [ ] Wildcard DNS `*.DEV_DOMAIN` → server IP
+- [ ] Traefik configured for wildcard TLS
+- [ ] `.env` filled from `.env.example`
 - [ ] `docker compose up -d`
-- [ ] `docker compose logs ollama-init` → modèles téléchargés
-- [ ] DevDocs : `docker compose exec devdocs thor docs:download javascript`
-- [ ] Webhook Forgejo → `http://openclaw-agent:9000/webhook`
-- [ ] Branch protection sur `main` (Required approvals: 1)
-- [ ] `.coderclaw/rules.yaml` dans chaque repo cible
+- [ ] `docker compose logs ollama-init` → models downloaded
+- [ ] DevDocs: `docker compose exec devdocs thor docs:download javascript`
+- [ ] Forgejo webhook → `http://openclaw-agent:9000/webhook`
+- [ ] Branch protection on `main` (Required approvals: 1)
+- [ ] `.coderclaw/rules.yaml` in each target repo
 
 ---
 
-## Compatibilité IDE
+## IDE compatibility
 
-| Accès | Condition | Compatible |
-|-------|-----------|------------|
-| Navigateur (Code Server) | toujours | tous navigateurs |
-| VS Code Desktop | `/ssh-key` configurée | Remote-SSH |
-| Cursor | `/ssh-key` configurée | Remote-SSH |
-| Windsurf | `/ssh-key` configurée | Remote-SSH |
-| JetBrains Gateway | `/ssh-key` configurée | SSH natif |
+| Access | Condition | Compatible |
+|--------|-----------|------------|
+| Browser (Code Server) | always | all browsers |
+| VS Code Desktop | `/ssh-key` configured | Remote-SSH |
+| Cursor | `/ssh-key` configured | Remote-SSH |
+| Windsurf | `/ssh-key` configured | Remote-SSH |
+| JetBrains Gateway | `/ssh-key` configured | Native SSH |

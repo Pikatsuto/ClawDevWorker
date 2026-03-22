@@ -1,21 +1,21 @@
 ###############################################################################
-# openclaw-agent  (agent de développement autonome — headless, sans Kasm)
+# openclaw-agent  (autonomous development agent — headless, no Kasm)
 #
-# Base : kasmweb/ubuntu-noble-dind-rootless (Ubuntu 24.04 + DinD rootless)
-#   → Fournit dockerd rootless pré-configuré, user 1000 (kasm-user)
-#   → On n'utilise PAS Kasm VNC/UI — juste le DinD rootless
+# Base: kasmweb/ubuntu-noble-dind-rootless (Ubuntu 24.04 + DinD rootless)
+#   → Provides pre-configured rootless dockerd, user 1000 (kasm-user)
+#   → We do NOT use Kasm VNC/UI — just the rootless DinD
 #
-# Ce que fait ce container :
-#   1. Lance dockerd rootless
-#   2. Expose un webhook HTTP sur :9000 — déclenché par Forgejo (issue assignée)
-#   3. Sur déclenchement : clone le repo, lit le contexte BMAD si présent,
-#      code dans des containers éphémères (--rm, --network none), pousse une PR
-#   4. Commente sur l'issue Forgejo tout au long du travail
+# What this container does:
+#   1. Starts rootless dockerd
+#   2. Exposes an HTTP webhook on :9000 — triggered by Forgejo (assigned issue)
+#   3. On trigger: clones the repo, reads BMAD context if present,
+#      codes in ephemeral containers (--rm, --network none), pushes a PR
+#   4. Comments on the Forgejo issue throughout the work
 #
-# Accès réseau :
+# Network access:
 #   - Forgejo  : host-gateway:${FORGEJO_HOST_PORT}
-#   - Coolify  : host-gateway:${COOLIFY_HOST_PORT}  (previews uniquement)
-#   - Internet : via agent-squid (whitelist : npm, pypi, github, crates.io...)
+#   - Coolify  : host-gateway:${COOLIFY_HOST_PORT}  (previews only)
+#   - Internet : via agent-squid (whitelist: npm, pypi, github, crates.io...)
 #   - Ollama   : backend (internal)
 #   - MCP docs : mcp-net (internal)
 ###############################################################################
@@ -45,7 +45,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# ── OpenClaw — installé globalement ──────────────────────────────────────────
+# ── OpenClaw — installed globally ─────────────────────────────────────────────
 RUN npm install -g openclaw 2>/dev/null || \
     (git clone --depth=1 https://github.com/openclaw/openclaw.git /opt/openclaw \
      && cd /opt/openclaw \
@@ -53,7 +53,7 @@ RUN npm install -g openclaw 2>/dev/null || \
      && (npm run build 2>/dev/null || true) \
      && npm link)
 
-# ── mcp-docs — MCP server recherche documentation ────────────────────────────
+# ── mcp-docs — MCP documentation search server ───────────────────────────────
 COPY services/mcp-docs/ /opt/mcp-docs/
 RUN cd /opt/mcp-docs && npm install --omit=dev
 COPY services/agent/gpu-scheduler/ /opt/gpu-scheduler/
@@ -76,7 +76,7 @@ COPY services/agent/specialists/              /opt/specialists/
 COPY services/worker/skills/loop-detect/ /opt/skills/loop-detect/
 RUN chmod -R a+rX /opt/skills/ /opt/specialists/
 
-# ── Script de démarrage ───────────────────────────────────────────────────────
+# ── Startup script ────────────────────────────────────────────────────────────
 COPY services/agent/scripts/start-agent.sh $STARTUPDIR/start-agent.sh
 RUN chmod +x $STARTUPDIR/start-agent.sh
 

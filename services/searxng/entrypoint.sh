@@ -4,9 +4,9 @@ set -e
 CONFIG_DIR="/etc/searxng"
 DEFAULT_DIR="/etc/default/searxng"
 
-# Initialiser settings.yml depuis les defaults si absent dans le volume
+# Initialize settings.yml from defaults if missing in volume
 if [ ! -f "${CONFIG_DIR}/settings.yml" ]; then
-    echo "[searxng] Premier démarrage — copie de la config par défaut"
+    echo "[searxng] First startup — copying default config"
     cp "${DEFAULT_DIR}/settings.yml" "${CONFIG_DIR}/settings.yml"
 fi
 

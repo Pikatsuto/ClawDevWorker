@@ -1,155 +1,155 @@
 ---
 name: git-flow
-description: "Gère le git flow propre pour chaque modification de code. Utilise ce skill pour CHAQUE écriture de fichier — commit atomique immédiat après chaque changement logique. Crée les branches feature/ ou fix/ selon le type de changement. Ouvre une PR par unité de travail logique une fois les commits poussés."
+description: "Manages clean git flow for each code modification. Use this skill for EVERY file write — immediate atomic commit after each logical change. Creates feature/ or fix/ branches depending on the type of change. Opens one PR per logical unit of work once commits are pushed."
 metadata: {"openclaw":{"emoji":"🌿","requires":{"bins":["git","curl","jq"],"env":["FORGEJO_TOKEN","FORGEJO_URL","REPO","ISSUE_ID","PARENT_BRANCH"]}}}
 user-invocable: false
 ---
 
-# git-flow — Git flow propre
+# git-flow — Clean git flow
 
-## Règles absolues
+## Absolute rules
 
-- **Un commit par changement logique** — jamais un gros commit fourre-tout
-- **Une branche par unité de travail** — feature, fix, refactor, test, docs
-- **Une PR par branche** — jamais de PR multi-sujets
-- **Tu ne merges JAMAIS toi-même** — ouvre la PR, c'est tout
-- **Messages de commit conventionnels** : `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
+- **One commit per logical change** — never a big catch-all commit
+- **One branch per unit of work** — feature, fix, refactor, test, docs
+- **One PR per branch** — never multi-topic PRs
+- **You NEVER merge yourself** — open the PR, that's it
+- **Conventional commit messages**: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
 
-## Structure des branches
+## Branch structure
 
 ```
-${PARENT_BRANCH}                    ← branche principale de l'issue (agent/issue-N-slug)
-  ├── feat/${ISSUE_ID}-nom-court    ← nouvelle fonctionnalité
-  ├── fix/${ISSUE_ID}-nom-court     ← correction de bug
-  ├── refactor/${ISSUE_ID}-nom      ← refactoring sans changement fonctionnel
-  ├── test/${ISSUE_ID}-nom          ← ajout/correction de tests
-  └── docs/${ISSUE_ID}-nom          ← documentation uniquement
+${PARENT_BRANCH}                    ← main branch of the issue (agent/issue-N-slug)
+  ├── feat/${ISSUE_ID}-short-name   ← new feature
+  ├── fix/${ISSUE_ID}-short-name    ← bug fix
+  ├── refactor/${ISSUE_ID}-name     ← refactoring without functional change
+  ├── test/${ISSUE_ID}-name         ← adding/fixing tests
+  └── docs/${ISSUE_ID}-name         ← documentation only
 ```
 
-## Workflow par unité de travail
+## Workflow per unit of work
 
-### 1. Identifier le type de changement
+### 1. Identify the type of change
 
-Avant de toucher au code, détermine :
-- `feat` : nouvelle fonctionnalité, nouveau comportement
-- `fix` : correction d'un bug, comportement cassé
-- `refactor` : amélioration sans changement fonctionnel
-- `test` : ajout ou correction de tests
-- `docs` : documentation, commentaires, README
+Before touching the code, determine:
+- `feat`: new feature, new behavior
+- `fix`: bug fix, broken behavior
+- `refactor`: improvement without functional change
+- `test`: adding or fixing tests
+- `docs`: documentation, comments, README
 
-### 2. Créer la branche de travail
+### 2. Create the working branch
 
 ```bash
 WORK_TYPE="feat"        # feat | fix | refactor | test | docs
-WORK_SLUG="nom-court"   # 2-4 mots kebab-case décrivant le changement
+WORK_SLUG="short-name"  # 2-4 kebab-case words describing the change
 WORK_BRANCH="${WORK_TYPE}/${ISSUE_ID}-${WORK_SLUG}"
 
-# Partir de la branche principale de l'issue
+# Start from the main branch of the issue
 git checkout "${PARENT_BRANCH}" 2>/dev/null || git checkout main
 git checkout -b "${WORK_BRANCH}"
 ```
 
-### 3. Coder et committer atomiquement
+### 3. Code and commit atomically
 
-**Après CHAQUE changement logique** (un fichier, un composant, une fonction) :
+**After EACH logical change** (one file, one component, one function):
 
 ```bash
-# Stagier UNIQUEMENT les fichiers de ce changement
-git add chemin/vers/fichier.ext
+# Stage ONLY the files for this change
+git add path/to/file.ext
 
-# Message conventionnel
-git commit -m "feat(auth): ajouter la validation JWT dans le middleware
+# Conventional message
+git commit -m "feat(auth): add JWT validation in middleware
 
-- Vérifie l'expiration du token
-- Extrait le userId depuis le payload
-- Retourne 401 si invalide
+- Check token expiration
+- Extract userId from payload
+- Return 401 if invalid
 
 Refs #${ISSUE_ID}"
 ```
 
-**Ne jamais faire** `git add .` sauf si tous les fichiers modifiés font partie du même changement atomique.
+**Never do** `git add .` unless all modified files are part of the same atomic change.
 
-### 4. Pousser et ouvrir la PR
+### 4. Push and open the PR
 
 ```bash
 git push origin "${WORK_BRANCH}"
 
-# Créer la PR vers la branche principale de l'issue (pas vers main)
+# Create the PR targeting the main branch of the issue (not main)
 curl -sf -X POST \
   -H "Authorization: token ${FORGEJO_TOKEN}" \
   -H "Content-Type: application/json" \
   "${FORGEJO_URL}/api/v1/repos/${REPO}/pulls" \
   -d "$(jq -n \
-    --arg title "${WORK_TYPE}(${WORK_SLUG}): description courte" \
-    --arg body  "## Changements\n\n- Description du changement\n\n## Pourquoi\n\nRéfère à l'issue #${ISSUE_ID}\n\nPart of #${ISSUE_ID}" \
+    --arg title "${WORK_TYPE}(${WORK_SLUG}): short description" \
+    --arg body  "## Changes\n\n- Description of the change\n\n## Why\n\nRefers to issue #${ISSUE_ID}\n\nPart of #${ISSUE_ID}" \
     --arg head  "${WORK_BRANCH}" \
     --arg base  "${PARENT_BRANCH}" \
     '{title: $title, body: $body, head: $head, base: $base}'
   )"
 ```
 
-### 5. Revenir sur la branche principale pour la suite
+### 5. Return to the main branch for the next task
 
 ```bash
 git checkout "${PARENT_BRANCH}"
 ```
 
-## Gestion des review comments
+## Handling review comments
 
-Si une PR reçoit des review comments :
+If a PR receives review comments:
 
 ```bash
-# Récupérer les comments de review
+# Fetch review comments
 PR_REVIEWS=$(curl -sf \
   -H "Authorization: token ${FORGEJO_TOKEN}" \
   "${FORGEJO_URL}/api/v1/repos/${REPO}/pulls/${PR_NUMBER}/reviews")
 
-# Reprendre sur la même branche
+# Switch back to the same branch
 git checkout "${WORK_BRANCH}"
 git pull origin "${WORK_BRANCH}"
 
-# Corriger, committer
-git add fichier-corrigé.ext
-git commit -m "fix(review): corriger X selon review de @reviewer
+# Fix, commit
+git add fixed-file.ext
+git commit -m "fix(review): fix X per review from @reviewer
 
-${DETAIL_DU_FIX}
+${FIX_DETAIL}
 
 Addresses review on #${PR_NUMBER}"
 
 git push origin "${WORK_BRANCH}"
 ```
 
-## Ce que tu fais en fin d'issue
+## What you do at the end of an issue
 
-Une fois toutes les PR de travail ouvertes :
+Once all work PRs are opened:
 
 ```bash
-# PR principale de l'issue — agrège les branches de travail
+# Main PR for the issue — aggregates the work branches
 curl -sf -X POST \
   -H "Authorization: token ${FORGEJO_TOKEN}" \
   -H "Content-Type: application/json" \
   "${FORGEJO_URL}/api/v1/repos/${REPO}/pulls" \
   -d "$(jq -n \
     --arg title "Issue #${ISSUE_ID}: ${ISSUE_TITLE}" \
-    --arg body  "Closes #${ISSUE_ID}\n\n## Résumé\n\n${SUMMARY}\n\n## PRs de travail\n\n${PR_LIST}" \
+    --arg body  "Closes #${ISSUE_ID}\n\n## Summary\n\n${SUMMARY}\n\n## Work PRs\n\n${PR_LIST}" \
     --arg head  "${PARENT_BRANCH}" \
     --arg base  "main" \
     '{title: $title, body: $body, head: $head, base: $base}'
   )"
 ```
 
-## Exemple concret
+## Concrete example
 
-Issue #42 : "Ajouter l'authentification JWT"
+Issue #42: "Add JWT authentication"
 
 ```
 main
- └── agent/issue-42-add-jwt-auth         ← PR principale → main
-       ├── feat/42-jwt-validation         ← PR atomique : middleware JWT
-       ├── feat/42-refresh-token          ← PR atomique : refresh token
-       ├── test/42-jwt-unit-tests         ← PR atomique : tests unitaires
-       └── docs/42-auth-api-docs          ← PR atomique : documentation API
+ └── agent/issue-42-add-jwt-auth         ← main PR → main
+       ├── feat/42-jwt-validation         ← atomic PR: JWT middleware
+       ├── feat/42-refresh-token          ← atomic PR: refresh token
+       ├── test/42-jwt-unit-tests         ← atomic PR: unit tests
+       └── docs/42-auth-api-docs          ← atomic PR: API documentation
 ```
 
-Chaque PR atomique est ouverte vers `agent/issue-42-add-jwt-auth`.
-La PR principale est ouverte vers `main` avec `Closes #42`.
+Each atomic PR is opened toward `agent/issue-42-add-jwt-auth`.
+The main PR is opened toward `main` with `Closes #42`.

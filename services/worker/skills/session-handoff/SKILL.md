@@ -1,34 +1,34 @@
 ---
 name: session-handoff
-description: "Génère un document de handoff portable pour reprendre une session dans n'importe quel environnement. Utilise /handoff pour sauvegarder l'état courant et /resume pour reprendre. Les handoffs sont partagés entre chat, VSCode et worker via le volume project_data."
+description: "Generates a portable handoff document to resume a session in any environment. Use /handoff to save the current state and /resume to pick up. Handoffs are shared between chat, VSCode and worker via the project_data volume."
 metadata: {"openclaw":{"emoji":"🤝","requires":{"bins":["node","date"]}}}
 user-invocable: true
 ---
 
-# session-handoff — Portabilité inter-environnements
+# session-handoff — Cross-environment portability
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/handoff` | Génère le handoff de la session courante |
-| `/handoff "contexte"` | Handoff avec note de contexte |
-| `/resume` | Liste les handoffs disponibles |
-| `/resume latest` | Reprend le handoff le plus récent |
-| `/resume <id>` | Reprend un handoff spécifique |
+| Command | Action |
+|---------|--------|
+| `/handoff` | Generate the handoff for the current session |
+| `/handoff "context"` | Handoff with a context note |
+| `/resume` | List available handoffs |
+| `/resume latest` | Resume the most recent handoff |
+| `/resume <id>` | Resume a specific handoff |
 
-## Procédure /handoff
+## Procedure /handoff
 
-### 1. Collecter l'état de la session
+### 1. Collect the session state
 
-L'agent résume en quelques lignes :
-- Tâche en cours et ce qui a été accompli
-- Décisions prises et pourquoi
-- Fichiers modifiés (et leur état : staged / commité / en cours)
-- Prochaines étapes
-- Contexte important à ne pas oublier
+The agent summarizes in a few lines:
+- Current task and what has been accomplished
+- Decisions made and why
+- Modified files (and their state: staged / committed / in progress)
+- Next steps
+- Important context not to forget
 
-### 2. Générer le fichier YAML
+### 2. Generate the YAML file
 
 ```javascript
 const fs   = require('fs');
@@ -54,7 +54,7 @@ const handoff = {
   project:   PROJECT_NAME,
   context:   process.env.HANDOFF_CONTEXT || '',
 
-  // À remplir par l'agent
+  // To be filled by the agent
   task: {
     description: '${TASK_DESCRIPTION}',
     progress:    '${TASK_PROGRESS}',
@@ -66,9 +66,9 @@ const handoff = {
   ],
 
   files: {
-    modified: [],  // fichiers modifiés non commités
-    staged:   [],  // fichiers dans le dossier staged
-    committed: [], // fichiers commités dans cette session
+    modified: [],  // modified files not committed
+    staged:   [],  // files in the staged directory
+    committed: [], // files committed in this session
   },
 
   git: {
@@ -80,15 +80,15 @@ const handoff = {
     // '...'
   ],
 
-  memory_snapshot: '${MEMORY_SUMMARY}',  // résumé des décisions importantes
+  memory_snapshot: '${MEMORY_SUMMARY}',  // summary of important decisions
 };
 
 fs.writeFileSync(filepath, require('./yaml-serialize')(handoff));
-console.log(`Handoff sauvegardé : ${filepath}`);
-console.log(`ID : ${handoff.id}`);
+console.log(`Handoff saved: ${filepath}`);
+console.log(`ID: ${handoff.id}`);
 ```
 
-### 3. Collecter l'état git automatiquement
+### 3. Collect git state automatically
 
 ```bash
 GIT_BRANCH=$(git -C "$WORKSPACE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -97,16 +97,16 @@ MODIFIED=$(git -C "$WORKSPACE" status --short 2>/dev/null | head -20)
 export GIT_BRANCH LAST_COMMIT MODIFIED
 ```
 
-## Procédure /resume
+## Procedure /resume
 
-### 1. Lister les handoffs disponibles
+### 1. List available handoffs
 
 ```bash
 PROJECT_DATA="${PROJECT_DATA_DIR:-/projects}"
 PROJECT_NAME="${PROJECT_NAME:-default}"
 SESSIONS_DIR="$PROJECT_DATA/$PROJECT_NAME/sessions"
 
-echo "=== Handoffs disponibles ==="
+echo "=== Available handoffs ==="
 ls -t "$SESSIONS_DIR"/*.yaml 2>/dev/null | head -10 | while read f; do
   ID=$(basename "$f" .yaml)
   SURFACE=$(grep 'surface:' "$f" | head -1 | awk '{print $2}')
@@ -115,7 +115,7 @@ ls -t "$SESSIONS_DIR"/*.yaml 2>/dev/null | head -10 | while read f; do
 done
 ```
 
-### 2. Charger un handoff
+### 2. Load a handoff
 
 ```bash
 ID="${1:-latest}"
@@ -127,24 +127,24 @@ else
 fi
 
 if [ ! -f "$FILE" ]; then
-  echo "Handoff introuvable : $ID"
+  echo "Handoff not found: $ID"
   exit 1
 fi
 
-echo "=== Reprise de la session ==="
+echo "=== Resuming session ==="
 cat "$FILE"
 ```
 
-Après avoir lu le fichier, l'agent reprend exactement là où la session précédente s'est arrêtée :
-- Il recharge le contexte git (branche, derniers commits)
-- Il reprend les fichiers staged si présents
-- Il continue les next_steps dans l'ordre
+After reading the file, the agent resumes exactly where the previous session left off:
+- It reloads the git context (branch, latest commits)
+- It picks up staged files if present
+- It continues the next_steps in order
 
-## Partage entre environnements
+## Sharing between environments
 
-Le volume `project_data` est monté sur tous les services :
-- `/projects/<nom>/sessions/` — handoffs
-- `/projects/<nom>/memory.db` — mémoire sémantique
-- `/projects/<nom>/rules.yaml` — règles pipeline
+The `project_data` volume is mounted on all services:
+- `/projects/<name>/sessions/` — handoffs
+- `/projects/<name>/memory.db` — semantic memory
+- `/projects/<name>/rules.yaml` — pipeline rules
 
-Ainsi un handoff créé dans VSCode est immédiatement disponible dans le chat et vice-versa.
+Thus a handoff created in VSCode is immediately available in chat and vice-versa.

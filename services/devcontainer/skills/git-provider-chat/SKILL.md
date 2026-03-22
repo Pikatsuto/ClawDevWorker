@@ -1,86 +1,86 @@
 ---
 name: git-provider
-description: "Accès Forgejo et GitHub depuis le chat. Utilise le token du USER (pas le token agent) pour les opérations sur son compte : créer des repos, inviter des collaborateurs, lire les issues et PRs. Requis par /spec init et /project status. Charge le token depuis ~/.openclaw/user-tokens/<userId>.json via le skill user-token."
+description: "Forgejo and GitHub access from chat. Uses the USER's token (not the agent token) for operations on their account: create repos, invite collaborators, read issues and PRs. Required by /spec init and /project status. Loads the token from ~/.openclaw/user-tokens/<userId>.json via the user-token skill."
 metadata: {"openclaw":{"emoji":"🐙"}}
 user-invocable: false
 always: false
 ---
 
-# git-provider — Opérations git depuis le chat
+# git-provider — Git operations from chat
 
-## Token utilisé
+## Token used
 
-Ce skill utilise le token PERSONNEL du développeur (pas le token agent).
-Il doit être enregistré avec `/token set` au préalable.
+This skill uses the developer's PERSONAL token (not the agent token).
+It must be registered with `/token set` beforehand.
 
-## Opérations disponibles
+## Available operations
 
-### Création de repo
+### Repo creation
 
 ```javascript
 const { execSync } = require('child_process');
 const path = require('path');
 
-// Charger le token user
+// Load user token
 const TOKEN_FILE = path.join(process.env.HOME, '.openclaw', 'user-tokens',
   `${process.env.USER_ID || 'default'}.json`);
 const tokens = JSON.parse(require('fs').readFileSync(TOKEN_FILE, 'utf8'));
 const userToken = tokens.forgejo || tokens.github;
 const providerUrl = process.env.GIT_PROVIDER_1_URL || 'http://host-gateway:3000';
 
-// Créer repo via API Forgejo
+// Create repo via Forgejo API
 async function createRepo({ name, description = '', private: isPrivate = true }) {
   const payload = JSON.stringify({ name, description, private: isPrivate, auto_init: true });
   // POST /api/v1/user/repos
 }
 
-// Inviter l'agent comme collaborateur
+// Invite the agent as a collaborator
 async function addCollaborator({ owner, repo, username, permission = 'write' }) {
   // PUT /api/v1/repos/{owner}/{repo}/collaborators/{username}
 }
 
-// Créer une issue
+// Create an issue
 async function createIssue({ owner, repo, title, body, assignees = [] }) {
   // POST /api/v1/repos/{owner}/{repo}/issues
 }
 
-// Récupérer les issues ouvertes
+// Retrieve open issues
 async function listIssues({ owner, repo, state = 'open' }) {
   // GET /api/v1/repos/{owner}/{repo}/issues
 }
 
-// Récupérer les PRs
+// Retrieve PRs
 async function listPullRequests({ owner, repo, state = 'open' }) {
   // GET /api/v1/repos/{owner}/{repo}/pulls
 }
 ```
 
-### Commandes utilisateur
+### User commands
 
-| Commande | Action |
-|----------|--------|
-| `/project status <owner/repo>` | Issues ouvertes, PRs, pipeline |
-| `/project issues <owner/repo>` | Liste les issues avec leur statut |
-| `/project prs <owner/repo>` | Liste les PRs |
+| Command | Action |
+|---------|--------|
+| `/project status <owner/repo>` | Open issues, PRs, pipeline |
+| `/project issues <owner/repo>` | List issues with their status |
+| `/project prs <owner/repo>` | List PRs |
 
-## Utilisation dans /spec init
+## Usage in /spec init
 
 ```
-1. Vérifier token user disponible (via user-token skill)
+1. Check user token is available (via user-token skill)
 2. createRepo({ name, private: true })
 3. addCollaborator({ username: AGENT_GIT_LOGIN })
-4. [BMAD génère les stories]
-5. Pour chaque story : createIssue({ assignees: [AGENT_GIT_LOGIN] })
-6. POST /deps sur l'orchestrateur pour le DAG
+4. [BMAD generates the stories]
+5. For each story: createIssue({ assignees: [AGENT_GIT_LOGIN] })
+6. POST /deps to the orchestrator for the DAG
 ```
 
-## Module partagé
+## Shared module
 
-Ce skill wrape `/opt/git-provider/index.js` qui contient l'implémentation
-complète pour Forgejo et GitHub (déjà dans l'image via COPY).
+This skill wraps `/opt/git-provider/index.js` which contains the complete
+implementation for Forgejo and GitHub (already in the image via COPY).
 
 ```javascript
-// Charger le provider avec le token user
+// Load the provider with the user token
 const { loadProviders } = require('/opt/git-provider/index.js');
-// Overrider le token avec celui du user pour cette opération
+// Override the token with the user's token for this operation
 ```

@@ -1,36 +1,36 @@
 ---
 name: user-token
-description: "Gère le token git personnel du développeur (distinct du token agent). Le token user est requis pour créer des repos sur son compte Forgejo/GitHub. Stocké dans le volume persistant du user, jamais dans les env vars globales. Commandes : /token set, /token status, /token clear."
+description: "Manages the developer's personal git token (distinct from the agent token). The user token is required to create repos on their Forgejo/GitHub account. Stored in the user's persistent volume, never in global env vars. Commands: /token set, /token status, /token clear."
 metadata: {"openclaw":{"emoji":"🔑"}}
 user-invocable: true
 always: false
 ---
 
-# user-token — Token git personnel du développeur
+# user-token — Developer's personal git token
 
-## Pourquoi deux tokens ?
+## Why two tokens?
 
 ```
-GIT_PROVIDER_1_TOKEN (token agent) → compte "agent" sur Forgejo
-  → commente les issues, crée les PRs, pousse le code au nom de l'agent
+GIT_PROVIDER_1_TOKEN (agent token) → "agent" account on Forgejo
+  → comments on issues, creates PRs, pushes code on behalf of the agent
 
-Token user (token personnel) → compte du DÉVELOPPEUR sur Forgejo/GitHub
-  → crée les repos, les possède, invite l'agent en collaborateur
-  → stocké dans ~/.openclaw/user-tokens/<userId>.json
-  → JAMAIS en variable d'env globale
+User token (personal token) → DEVELOPER's account on Forgejo/GitHub
+  → creates repos, owns them, invites the agent as collaborator
+  → stored in ~/.openclaw/user-tokens/<userId>.json
+  → NEVER in a global environment variable
 ```
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/token set <token>` | Enregistre le token git du user |
-| `/token set forgejo <token>` | Token Forgejo spécifique |
-| `/token set github <token>` | Token GitHub spécifique |
-| `/token status` | Vérifie les tokens enregistrés (masqués) |
-| `/token clear` | Supprime les tokens du user |
+| Command | Action |
+|---------|--------|
+| `/token set <token>` | Registers the user's git token |
+| `/token set forgejo <token>` | Forgejo-specific token |
+| `/token set github <token>` | GitHub-specific token |
+| `/token status` | Checks registered tokens (masked) |
+| `/token clear` | Deletes the user's tokens |
 
-## Procédure /token set
+## /token set procedure
 
 ```javascript
 const fs      = require('fs');
@@ -62,28 +62,28 @@ function maskToken(t) {
 }
 ```
 
-## Validation du token
+## Token validation
 
-Après `/token set`, valider que le token fonctionne en appelant l'API :
+After `/token set`, validate that the token works by calling the API:
 
 ```javascript
-// Forgejo : GET /api/v1/user
-// GitHub  : GET https://api.github.com/user
-// Vérifier que le status est 200 et récupérer le login du user
+// Forgejo: GET /api/v1/user
+// GitHub:  GET https://api.github.com/user
+// Check that the status is 200 and retrieve the user's login
 ```
 
-Afficher : `✓ Token Forgejo validé — connecté en tant que @{login}`
+Display: `✓ Forgejo token validated — logged in as @{login}`
 
-## Génération du token
+## Token generation
 
-Si le user n'a pas de token :
+If the user doesn't have a token:
 
-**Forgejo :**
-> Va dans Forgejo → Settings → Applications → Generate Token
-> Permissions requises : `repo` (Read + Write)
-> Paste-le ici avec `/token set forgejo <token>`
+**Forgejo:**
+> Go to Forgejo → Settings → Applications → Generate Token
+> Required permissions: `repo` (Read + Write)
+> Paste it here with `/token set forgejo <token>`
 
-**GitHub :**
-> Va dans GitHub → Settings → Developer Settings → Personal access tokens → Fine-grained
-> Permissions : Contents (Read + Write), Issues (Read + Write), Metadata (Read)
-> Paste-le avec `/token set github <token>`
+**GitHub:**
+> Go to GitHub → Settings → Developer Settings → Personal access tokens → Fine-grained
+> Permissions: Contents (Read + Write), Issues (Read + Write), Metadata (Read)
+> Paste it with `/token set github <token>`

@@ -1,38 +1,38 @@
 # docker-exec
 
-Exécute du code dans un container Docker éphémère isolé.
+Executes code in an isolated ephemeral Docker container.
 
-## Comportement
+## Behavior
 
-- Le container est lancé avec `docker run --rm` — détruit automatiquement après exécution
-- Réseau : `none` par défaut — aucun accès internet, aucun accès aux services internes
-- Le code est passé via stdin ou un fichier temporaire monté en volume
-- stdout et stderr sont retournés à l'agent
-- Si le container dépasse le timeout, il est tué (`docker kill`)
+- The container is launched with `docker run --rm` — automatically destroyed after execution
+- Network: `none` by default — no internet access, no access to internal services
+- Code is passed via stdin or a temporary file mounted as a volume
+- stdout and stderr are returned to the agent
+- If the container exceeds the timeout, it is killed (`docker kill`)
 
-## Images disponibles (pré-pullées)
+## Available images (pre-pulled)
 
 - `python:3.12-slim` — Python 3.12
 - `node:22-slim` — Node.js 22
-- `ubuntu:24.04` — Bash, outils GNU standard
-- `bash:5` — Bash ultra-léger
+- `ubuntu:24.04` — Bash, standard GNU tools
+- `bash:5` — Ultra-lightweight Bash
 
-## Utilisation
+## Usage
 
 ```
-Écrire et exécuter un script Python :
-1. Créer le fichier /tmp/script.py avec le contenu voulu
-2. Appeler docker-exec avec image=python:3.12-slim, file=/tmp/script.py
+Write and execute a Python script:
+1. Create the file /tmp/script.py with the desired content
+2. Call docker-exec with image=python:3.12-slim, file=/tmp/script.py
 
-Exécuter une commande Bash :
-1. Appeler docker-exec avec image=bash:5, command="echo hello"
+Execute a Bash command:
+1. Call docker-exec with image=bash:5, command="echo hello"
 ```
 
-## Sécurité
+## Security
 
-- `--network none` — pas d'accès réseau
-- `--read-only` — filesystem en lecture seule sauf /tmp
-- `--memory ${EPHEMERAL_MEMORY}` — limite RAM
-- `--cpus ${EPHEMERAL_CPUS}` — limite CPU
-- Timeout : `${EPHEMERAL_TIMEOUT}s`
-- Pas d'accès au socket Docker de l'hôte (DinD rootless interne)
+- `--network none` — no network access
+- `--read-only` — read-only filesystem except /tmp
+- `--memory ${EPHEMERAL_MEMORY}` — RAM limit
+- `--cpus ${EPHEMERAL_CPUS}` — CPU limit
+- Timeout: `${EPHEMERAL_TIMEOUT}s`
+- No access to the host's Docker socket (internal rootless DinD)

@@ -5,26 +5,26 @@ CONFIG_DIR="/etc/squid"
 DEFAULT_DIR="/etc/default/squid"
 WHITELIST_DIR="/etc/squid/whitelist"
 
-# Initialiser squid.conf depuis les defaults si absent dans le volume
+# Initialize squid.conf from defaults if missing in volume
 if [ ! -f "${CONFIG_DIR}/squid.conf" ]; then
-    echo "[squid] Premier démarrage — copie de la config par défaut"
+    echo "[squid] First startup — copying default config"
     cp "${DEFAULT_DIR}/squid.conf" "${CONFIG_DIR}/squid.conf"
 fi
 
-# Initialiser le dossier whitelist partagé avec openclaw-agent
+# Initialize the whitelist directory shared with openclaw-agent
 if [ ! -d "${WHITELIST_DIR}" ]; then
-    echo "[squid] Création du dossier whitelist"
+    echo "[squid] Creating whitelist directory"
     mkdir -p "${WHITELIST_DIR}"
 fi
 
 if [ ! -f "${WHITELIST_DIR}/whitelist.conf" ]; then
-    echo "[squid] Création de la whitelist vide"
+    echo "[squid] Creating empty whitelist"
     touch "${WHITELIST_DIR}/whitelist.conf"
 fi
 
-# Initialiser le cache si nécessaire
+# Initialize cache if needed
 if [ ! -d "/var/spool/squid/00" ]; then
-    echo "[squid] Initialisation du cache"
+    echo "[squid] Initializing cache"
     squid -z --foreground 2>/dev/null || true
 fi
 

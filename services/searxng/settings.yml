@@ -1,6 +1,6 @@
 # SearXNG configuration — mcp-docs
-# Moteurs sélectionnés : uniquement ceux qui tolèrent le scraping sans ban
-# Pas de Google, pas de Bing en direct (risque de ban IP)
+# Selected engines: only those that tolerate scraping without bans
+# No Google, no Bing directly (risk of IP ban)
 
 use_default_settings: true
 
@@ -19,7 +19,7 @@ search:
   languages:
     - "en"
     - "fr"
-  # Pas de ban timeout — on maîtrise la fréquence côté MCP
+  # No ban timeout — we control the request frequency on the MCP side
   ban_time_on_fail: 0
   max_ban_time_on_fail: 0
   suspended_times:
@@ -47,7 +47,7 @@ ui:
   theme_args:
     simple_style: dark
 
-# Résultats en JSON pour l'API
+# JSON results for the API
 outgoing:
   request_timeout: 6.0
   max_request_timeout: 10.0
@@ -57,7 +57,7 @@ outgoing:
   enable_http2: true
 
 engines:
-  # ── Moteurs autorisés (tolèrent le scraping) ───────────────────────────────
+  # ── Allowed engines (tolerate scraping) ──────────────────────────────────
 
   - name: duckduckgo
     engine: duckduckgo
@@ -132,7 +132,7 @@ engines:
     shortcut: ge
     disabled: false
 
-  # ── Moteurs DÉSACTIVÉS (risque de ban) ────────────────────────────────────
+  # ── DISABLED engines (risk of ban) ───────────────────────────────────────
 
   - name: google
     engine: google

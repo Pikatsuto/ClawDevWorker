@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Dépendances système pour Chrome + nodriver
+# System dependencies for Chrome + nodriver
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer Chrome stable
+# Install stable Chrome
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
        > /etc/apt/sources.list.d/google-chrome.list \
@@ -51,7 +51,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     && apt-get install -y google-chrome-stable --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# nodriver — pas de détection automatisation
+# nodriver — no automation detection
 RUN pip install --no-cache-dir nodriver fastapi uvicorn
 
 WORKDIR /app
@@ -60,5 +60,5 @@ COPY services/browserless/server.py .
 ENV DISPLAY=:99
 ENV PYTHONUNBUFFERED=1
 
-# Lance Xvfb + serveur HTTP
+# Start Xvfb + HTTP server
 CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & sleep 1 && uvicorn server:app --host 0.0.0.0 --port 3000"]

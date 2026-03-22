@@ -2,7 +2,7 @@
 /**
  * git-provider/forgejo.js — Provider Forgejo/Gitea
  *
- * Implémente l'API unifiée git provider pour Forgejo.
+ * Implements the unified git provider API for Forgejo.
  */
 'use strict';
 
@@ -19,7 +19,7 @@ class ForgejoProvider {
     this._useHttps     = url.startsWith('https');
   }
 
-  // ── Signature webhook ───────────────────────────────────────────────────────
+  // ── Webhook signature ──────────────────────────────────────────────────────
 
   verifyWebhook(body, signature) {
     if (!this.webhookSecret) return true;
@@ -30,7 +30,7 @@ class ForgejoProvider {
     return `sha256=${expected}` === signature;
   }
 
-  // ── Parsing webhook ─────────────────────────────────────────────────────────
+  // ── Webhook parsing ─────────────────────────────────────────────────────────
 
   parseWebhook(headers, body) {
     const event = headers['x-gitea-event'] || headers['x-forgejo-event'];
@@ -77,7 +77,7 @@ class ForgejoProvider {
     return { type: `unknown.${event}`, repo };
   }
 
-  // ── API REST ────────────────────────────────────────────────────────────────
+  // ── REST API ────────────────────────────────────────────────────────────────
 
   _req(method, path, body = null) {
     return new Promise((resolve, reject) => {
@@ -112,7 +112,7 @@ class ForgejoProvider {
     });
   }
 
-  // ── Interface unifiée ───────────────────────────────────────────────────────
+  // ── Unified interface ──────────────────────────────────────────────────────
 
   async getIssue(repo, issueId) {
     const [owner, name] = repo.split('/');
@@ -162,11 +162,11 @@ class ForgejoProvider {
 
   async setLabel(repo, issueId, label) {
     const [owner, name] = repo.split('/');
-    // Récupère l'ID du label
+    // Retrieve the label ID
     const labels = await this._req('GET', `/repos/${owner}/${name}/labels`);
     const found  = labels.data.find(l => l.name === label);
     if (!found) {
-      // Crée le label s'il n'existe pas
+      // Create the label if it doesn't exist
       const created = await this._req('POST', `/repos/${owner}/${name}/labels`, {
         name, color: '#0075ca',
       });

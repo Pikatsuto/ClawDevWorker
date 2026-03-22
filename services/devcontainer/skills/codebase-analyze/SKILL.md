@@ -1,28 +1,28 @@
 ---
 name: codebase-analyze
-description: "Analyse la structure du codebase avant toute modification : parse les fichiers TypeScript/JavaScript/Python, construit un dependency graph, calcule l'impact radius d'un changement. Utilise ce skill AVANT de commencer à coder sur une issue ou une tâche. Stocke le résultat dans .coderclaw/memory/codebase-index.json."
+description: "Analyzes the codebase structure before any modification: parses TypeScript/JavaScript/Python files, builds a dependency graph, calculates the impact radius of a change. Use this skill BEFORE starting to code on an issue or task. Stores the result in .coderclaw/memory/codebase-index.json."
 metadata: {"openclaw":{"emoji":"🔍","requires":{"bins":["node","find","grep"]}}}
 user-invocable: true
 ---
 
-# codebase-analyze — Analyse AST et Impact
+# codebase-analyze — AST Analysis and Impact
 
-## Quand l'utiliser
+## When to use
 
-- **Automatiquement** au début de chaque tâche worker Forgejo/GitHub
-- **Sur demande** : `/analyze` ou `/analyze src/auth/`
-- **Avant une refacto** pour connaître l'impact radius
+- **Automatically** at the start of each Forgejo/GitHub worker task
+- **On demand**: `/analyze` or `/analyze src/auth/`
+- **Before a refactor** to know the impact radius
 
-## Procédure
+## Procedure
 
-### 1. Lister les fichiers du projet
+### 1. List project files
 
 ```bash
 WORKSPACE="${WORKSPACE:-$(pwd)}"
 INDEX_FILE="${OPENCLAW_DIR:-$HOME/.openclaw}/.coderclaw/memory/codebase-index.json"
 mkdir -p "$(dirname "$INDEX_FILE")"
 
-# Fichiers de code (exclut node_modules, .git, dist, build)
+# Code files (excludes node_modules, .git, dist, build)
 FILES=$(find "$WORKSPACE" -type f \( \
   -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \
   -o -name "*.vue" -o -name "*.py" -o -name "*.go" \
@@ -34,15 +34,15 @@ FILES=$(find "$WORKSPACE" -type f \( \
   ! -path "*/build/*" \
   ! -path "*/.next/*" \
   ! -path "*/.nuxt/*" \
-| head -200)  # limite 200 fichiers pour rester dans le contexte
+| head -200)  # limit to 200 files to stay within context
 
-echo "Fichiers analysés : $(echo "$FILES" | wc -l)"
+echo "Files analyzed: $(echo "$FILES" | wc -l)"
 ```
 
-### 2. Analyse des imports/exports (Node.js)
+### 2. Import/export analysis (Node.js)
 
 ```javascript
-// analyze.js — script d'analyse AST léger
+// analyze.js — lightweight AST analysis script
 const fs   = require('fs');
 const path = require('path');
 
@@ -55,7 +55,7 @@ for (const file of files) {
     const content = fs.readFileSync(file, 'utf8');
     const relPath = path.relative(WORKSPACE, file);
 
-    // Extraire imports
+    // Extract imports
     const imports = [];
     const importRe = /(?:import|require)\s*(?:\(?\s*['"])([^'"]+)['"]\s*\)?/g;
     let m;
@@ -63,21 +63,21 @@ for (const file of files) {
       imports.push(m[1]);
     }
 
-    // Extraire exports
+    // Extract exports
     const exports = [];
     const exportRe = /export\s+(?:default\s+)?(?:class|function|const|let|var|interface|type|enum)\s+(\w+)/g;
     while ((m = exportRe.exec(content)) !== null) {
       exports.push(m[1]);
     }
 
-    // Extraire fonctions/classes principales
+    // Extract main functions/classes
     const symbols = [];
     const symRe = /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function|class)\s+(\w+)/g;
     while ((m = symRe.exec(content)) !== null) {
       symbols.push(m[1]);
     }
 
-    // Compter les lignes
+    // Count lines
     const lines = content.split('\n').length;
 
     index[relPath] = { imports, exports, symbols, lines };
@@ -88,24 +88,24 @@ process.stdout.write(JSON.stringify(index, null, 2));
 ```
 
 ```bash
-# Lancer l'analyse
+# Run the analysis
 node /opt/skills/codebase-analyze/analyze.js $FILES > "$INDEX_FILE"
-echo "Index écrit : $INDEX_FILE"
+echo "Index written: $INDEX_FILE"
 ```
 
-### 3. Calcul de l'impact radius
+### 3. Impact radius calculation
 
-Pour un fichier cible (ex: `src/auth/login.ts`) :
+For a target file (e.g.: `src/auth/login.ts`):
 
 ```javascript
-// impact.js — calcule quels fichiers importent le fichier cible
+// impact.js — calculates which files import the target file
 const index  = JSON.parse(require('fs').readFileSync(process.env.INDEX_FILE));
-const target = process.argv[2]; // ex: src/auth/login.ts
+const target = process.argv[2]; // e.g.: src/auth/login.ts
 
 const impacted = [];
 for (const [file, info] of Object.entries(index)) {
   const importsTarget = info.imports.some(imp => {
-    // Résolution relative simple
+    // Simple relative resolution
     return imp.includes(target.replace('.ts','').replace('.js','')) ||
            imp.endsWith(target.split('/').pop().replace('.ts',''));
   });
@@ -115,42 +115,42 @@ for (const [file, info] of Object.entries(index)) {
 console.log(JSON.stringify({ target, impacted, count: impacted.length }));
 ```
 
-### 4. Résumé pour l'agent
+### 4. Summary for the agent
 
-Après l'analyse, produit un résumé concis :
+After the analysis, produce a concise summary:
 
 ```
-## Analyse codebase — ${WORKSPACE}
+## Codebase analysis — ${WORKSPACE}
 
-**Fichiers analysés :** N
-**Impact radius de ${TARGET_FILE} :** M fichiers impactés
+**Files analyzed:** N
+**Impact radius of ${TARGET_FILE}:** M files impacted
   - src/components/LoginForm.vue
   - src/middleware/auth.ts
   - tests/auth.test.ts
 
-**Symboles exportés par ${TARGET_FILE} :**
+**Symbols exported by ${TARGET_FILE}:**
   - loginUser, validateToken, AuthError
 
-**Recommandation :** Modifier ces ${M} fichiers nécessite de vérifier...
+**Recommendation:** Modifying these ${M} files requires checking...
 ```
 
-### 5. Mise à jour incrémentale
+### 5. Incremental update
 
-L'index est mis à jour uniquement pour les fichiers modifiés :
+The index is only updated for modified files:
 
 ```bash
-# Fichiers modifiés depuis le dernier commit
+# Files modified since the last commit
 CHANGED=$(git -C "$WORKSPACE" diff --name-only HEAD 2>/dev/null || echo "")
 if [ -n "$CHANGED" ]; then
   node /opt/skills/codebase-analyze/analyze.js $CHANGED >> "$INDEX_FILE.patch"
 fi
 ```
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/analyze` | Analyse tout le workspace |
-| `/analyze src/auth/` | Analyse un dossier spécifique |
-| `/impact src/auth/login.ts` | Calcule l'impact radius d'un fichier |
-| `/symbols ClassName` | Cherche où un symbole est utilisé |
+| Command | Action |
+|---------|--------|
+| `/analyze` | Analyze the entire workspace |
+| `/analyze src/auth/` | Analyze a specific directory |
+| `/impact src/auth/login.ts` | Calculate the impact radius of a file |
+| `/symbols ClassName` | Search where a symbol is used |

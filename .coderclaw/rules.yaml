@@ -1,4 +1,4 @@
-# .coderclaw/rules.yaml — Pipeline RBAC du projet
+# .coderclaw/rules.yaml — Project RBAC pipeline
 
 pipeline:
   gates: [architect, fullstack, security, qa, doc]
@@ -16,12 +16,12 @@ specialists:
   devops:
     triggers: [docker, ci, cd, deploy, nginx, traefik, monitoring]
   security:
-    triggers: [sécurité, security, injection, xss, csrf, auth, login, password, token, secret, vulnérabilité, faille]
+    triggers: [security, injection, xss, csrf, auth, login, password, token, secret, vulnerability, flaw]
   marketing:
     triggers: [seo, landing, conversion, copy, meta, og]
   design:
-    triggers: [charte, branding, couleur, typographie, maquette, accessibilité]
+    triggers: [branding, color, typography, mockup, accessibility]
   product:
     triggers: [prd, user story, acceptance, roadmap, backlog]
   bizdev:
-    triggers: [pricing, abonnement, go-to-market, partenariat]
+    triggers: [pricing, subscription, go-to-market, partnership]

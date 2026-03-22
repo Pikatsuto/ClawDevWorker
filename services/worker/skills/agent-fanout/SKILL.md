@@ -1,49 +1,49 @@
 ---
 name: agent-fanout
-description: "Décompose une issue complexe en sous-tâches indépendantes et lance des sub-agents OpenClaw en parallèle. Utilise ce skill quand l'issue implique plusieurs modules distincts, plusieurs fichiers sans dépendances entre eux, ou plusieurs fonctionnalités logiquement séparables. Chaque sub-agent travaille sur sa propre branche et ouvre ses propres PRs. Ne pas utiliser si les tâches sont séquentielles ou dépendantes les unes des autres."
+description: "Breaks down a complex issue into independent subtasks and launches parallel OpenClaw sub-agents. Use this skill when the issue involves multiple distinct modules, multiple files with no dependencies between them, or multiple logically separable features. Each sub-agent works on its own branch and opens its own PRs. Do not use if tasks are sequential or dependent on each other."
 metadata: {"openclaw":{"emoji":"🔀","requires":{"bins":["node","curl","jq"],"env":["SCHEDULER_URL","FORGEJO_TOKEN","FORGEJO_URL","REPO","ISSUE_ID","PARENT_BRANCH","OLLAMA_BASE_URL","OLLAMA_MODEL"]}}}
 user-invocable: false
 ---
 
-# agent-fanout — Fan-out de sub-agents dans le worker
+# agent-fanout — Sub-agent fan-out in the worker
 
-## Quand décomposer
+## When to decompose
 
-**Décomposer si l'issue :**
-- Mentionne explicitement plusieurs modules/composants distincts
-- Peut être découpée en N tâches sans ordre imposé entre elles
-- Contient des mots comme : "chaque", "tous les", "pour chaque module", "et aussi"
-- Implique plus de 5 fichiers dans des répertoires différents
+**Decompose if the issue:**
+- Explicitly mentions multiple distinct modules/components
+- Can be split into N tasks with no required ordering between them
+- Contains words like: "each", "all", "for each module", "and also"
+- Involves more than 5 files in different directories
 
-**Ne PAS décomposer si :**
-- Les tâches sont séquentielles ("d'abord X, puis Y")
-- Une tâche dépend du résultat d'une autre
-- L'issue est simple (< 3 fichiers, 1 module)
-- Le contexte BMAD interdit explicitement la parallélisation
+**Do NOT decompose if:**
+- Tasks are sequential ("first X, then Y")
+- One task depends on the result of another
+- The issue is simple (< 3 files, 1 module)
+- The BMAD context explicitly forbids parallelization
 
-## Analyse de décomposabilité (CPU)
+## Decomposability analysis (CPU)
 
-Avant de décomposer, valide avec le modèle CPU :
+Before decomposing, validate with the CPU model:
 
 ```bash
 DECOMPOSE_CHECK=$(curl -sf -X POST "${OLLAMA_CPU_URL:-http://ollama-cpu:11434}/api/generate" \
   -H "Content-Type: application/json" \
   -d "$(jq -n \
-    --arg prompt "Analyse cette issue et dis si elle peut être décomposée en sous-tâches INDÉPENDANTES (sans dépendances entre elles).
+    --arg prompt "Analyze this issue and determine if it can be decomposed into INDEPENDENT subtasks (with no dependencies between them).
 
-Issue : \"${ISSUE_TITLE}\"
-Description : \"${ISSUE_BODY_SHORT}\"
+Issue: \"${ISSUE_TITLE}\"
+Description: \"${ISSUE_BODY_SHORT}\"
 
-Réponds UNIQUEMENT en JSON :
+Respond ONLY in JSON:
 {
   \"decomposable\": true/false,
-  \"reason\": \"explication courte\",
+  \"reason\": \"short explanation\",
   \"subtasks\": [
-    {\"id\": \"task-1\", \"scope\": \"module ou fichiers concernés\", \"type\": \"feat|fix|refactor|test\", \"description\": \"ce que fait cette sous-tâche\"},
+    {\"id\": \"task-1\", \"scope\": \"module or files involved\", \"type\": \"feat|fix|refactor|test\", \"description\": \"what this subtask does\"},
     ...
   ]
 }
-Si decomposable=false, subtasks=[]." \
+If decomposable=false, subtasks=[]." \
     '{model:"qwen3.5:0.8b", prompt:$prompt, stream:false, keep_alive:0, options:{num_gpu:0,num_predict:300,temperature:0}}'
   )" | jq -r '.response // ""' | grep -o '{.*}' | head -1)
 
@@ -52,23 +52,23 @@ SUBTASKS=$(echo "$DECOMPOSE_CHECK" | jq -r '.subtasks // []')
 SUBTASK_COUNT=$(echo "$SUBTASKS" | jq 'length')
 ```
 
-Si `decomposable=false` ou `subtask_count < 2` → traiter l'issue normalement sans fan-out.
+If `decomposable=false` or `subtask_count < 2` → handle the issue normally without fan-out.
 
-## Procédure de fan-out
+## Fan-out procedure
 
-### 1. Préparer les branches sub-agents
+### 1. Prepare sub-agent branches
 
 ```bash
 DISPATCH_ID="fanout-${ISSUE_ID}-$(date +%s)"
 
-# Pour chaque sous-tâche identifiée
+# For each identified subtask
 for task in $(echo "$SUBTASKS" | jq -c '.[]'); do
   TASK_ID=$(echo "$task" | jq -r '.id')
   TASK_TYPE=$(echo "$task" | jq -r '.type')
   TASK_SCOPE=$(echo "$task" | jq -r '.scope' | tr ' /' '--' | tr '[:upper:]' '[:lower:]' | cut -c1-20)
   TASK_DESC=$(echo "$task" | jq -r '.description')
 
-  # Branche du sub-agent : part de PARENT_BRANCH
+  # Sub-agent branch: starts from PARENT_BRANCH
   SUB_BRANCH="${TASK_TYPE}/${ISSUE_ID}-${TASK_SCOPE}"
 
   git checkout "${PARENT_BRANCH}"
@@ -76,14 +76,14 @@ for task in $(echo "$SUBTASKS" | jq -c '.[]'); do
   git push origin "${SUB_BRANCH}" --set-upstream 2>/dev/null || true
   git checkout "${PARENT_BRANCH}"
 
-  echo "Branche sub-agent créée : ${SUB_BRANCH}"
+  echo "Sub-agent branch created: ${SUB_BRANCH}"
 done
 ```
 
-### 2. Demander les slots GPU au scheduler
+### 2. Request GPU slots from the scheduler
 
 ```bash
-# Réserve N slots — un par sous-tâche
+# Reserve N slots — one per subtask
 SLOT_REQUEST=$(curl -sf -X POST "${SCHEDULER_URL}/chat/fanout" \
   -H "Content-Type: application/json" \
   -d "$(jq -n \
@@ -92,12 +92,12 @@ SLOT_REQUEST=$(curl -sf -X POST "${SCHEDULER_URL}/chat/fanout" \
     '{subtasks: [range($count) | {messages:[], surface:"agent"}], surface: $surface}'
   )")
 
-echo "Slots GPU alloués : $(echo "$SLOT_REQUEST" | jq '.subtasks | length')"
+echo "GPU slots allocated: $(echo "$SLOT_REQUEST" | jq '.subtasks | length')"
 ```
 
-### 3. Lancer les sub-agents en background
+### 3. Launch sub-agents in background
 
-Pour chaque sous-tâche, lancer un sub-agent OpenClaw isolé :
+For each subtask, launch an isolated OpenClaw sub-agent:
 
 ```bash
 RESULTS_DIR="/tmp/${DISPATCH_ID}/results"
@@ -111,7 +111,7 @@ for task in $(echo "$SUBTASKS" | jq -c '.[]'); do
   TASK_DESC=$(echo "$task" | jq -r '.description')
   SUB_BRANCH="${TASK_TYPE}/${ISSUE_ID}-${TASK_SCOPE}"
 
-  # Slot GPU pour ce sub-agent
+  # GPU slot for this sub-agent
   SLOT=$(echo "$SLOT_REQUEST" | jq -c ".subtasks[${IDX}]")
   SUB_MODEL=$(echo "$SLOT"   | jq -r '.model // env.OLLAMA_MODEL')
   SUB_OLLAMA=$(echo "$SLOT"  | jq -r '.ollamaUrl // env.OLLAMA_BASE_URL')
@@ -121,10 +121,10 @@ for task in $(echo "$SUBTASKS" | jq -c '.[]'); do
   EPHEMERAL_DIR="/tmp/${DISPATCH_ID}/${TASK_ID}"
   mkdir -p "$EPHEMERAL_DIR"
 
-  # Dossier de workspace isolé — lecture du repo, écriture dans éphémère uniquement
-  # Le sub-agent reçoit comme workspace le repo cloné en read-only
-  # Il ne peut écrire que dans EPHEMERAL_DIR
-  # Git push est autorisé sur SUB_BRANCH uniquement
+  # Isolated workspace directory — reads from the repo, writes to ephemeral only
+  # The sub-agent receives the cloned repo as a read-only workspace
+  # It can only write to EPHEMERAL_DIR
+  # Git push is allowed on SUB_BRANCH only
 
   bash pty:false background:true timeout:300 command:"
     export FORGEJO_TOKEN='${FORGEJO_TOKEN}'
@@ -149,7 +149,7 @@ for task in $(echo "$SUBTASKS" | jq -c '.[]'); do
 done
 ```
 
-### 4. Attendre le fan-in
+### 4. Wait for fan-in
 
 ```bash
 node /opt/agent-fanout/fanin-wait.js \
@@ -158,12 +158,12 @@ node /opt/agent-fanout/fanin-wait.js \
   --timeout 300
 ```
 
-### 5. Agréger et ouvrir la PR principale
+### 5. Aggregate and open the main PR
 
-Une fois tous les sub-agents terminés :
+Once all sub-agents have completed:
 
 ```bash
-# Collecter les résultats
+# Collect results
 PR_LIST=""
 SUMMARY=""
 for f in "$RESULTS_DIR"/*.json; do
@@ -179,36 +179,36 @@ for f in "$RESULTS_DIR"/*.json; do
   SUMMARY="${SUMMARY}\n### ${TASK_BRANCH}\n${TASK_SUMMARY}\n"
 done
 
-# PR principale issue → main
+# Main PR issue → main
 curl -sf -X POST \
   -H "Authorization: token ${FORGEJO_TOKEN}" \
   -H "Content-Type: application/json" \
   "${FORGEJO_URL}/api/v1/repos/${REPO}/pulls" \
   -d "$(jq -n \
     --arg title "Issue #${ISSUE_ID}: ${ISSUE_TITLE}" \
-    --arg body  "Closes #${ISSUE_ID}\n\n## Résumé\n${SUMMARY}\n\n## PRs atomiques\n${PR_LIST}" \
+    --arg body  "Closes #${ISSUE_ID}\n\n## Summary\n${SUMMARY}\n\n## Atomic PRs\n${PR_LIST}" \
     --arg head  "${PARENT_BRANCH}" \
     --arg base  "main" \
     '{title:$title, body:$body, head:$head, base:$base}'
   )"
 
-# Nettoyage
+# Cleanup
 rm -rf "/tmp/${DISPATCH_ID}"
 ```
 
-## Sécurité des sub-agents
+## Sub-agent security
 
-Chaque sub-agent :
-- Lecture : tout le repo cloné (read-only pour les fichiers existants)
-- Écriture : uniquement dans son `EPHEMERAL_DIR` pour le scratchpad, et via `git` sur `SUB_BRANCH` uniquement
-- Réseau : Forgejo + Ollama + mcp-docs via proxy
-- Ne peut PAS pousser sur `main`, `develop`, ou d'autres branches que `SUB_BRANCH`
-- Ne peut PAS merger de PR
-- Ne peut PAS modifier la config infrastructure
+Each sub-agent:
+- Read: the entire cloned repo (read-only for existing files)
+- Write: only to its `EPHEMERAL_DIR` for the scratchpad, and via `git` on `SUB_BRANCH` only
+- Network: Forgejo + Ollama + mcp-docs via proxy
+- CANNOT push to `main`, `develop`, or any branches other than `SUB_BRANCH`
+- CANNOT merge PRs
+- CANNOT modify the infrastructure config
 
-## Limites
+## Limits
 
-- Maximum 4 sub-agents en parallèle (limite VRAM conservative)
-- Timeout par sub-agent : 300 secondes
-- Si un sub-agent échoue : son résultat est marqué `{status:"failed"}`, les autres continuent
-- Si < 2 sous-tâches identifiées : ne pas fan-out, traiter normalement
+- Maximum 4 sub-agents in parallel (conservative VRAM limit)
+- Timeout per sub-agent: 300 seconds
+- If a sub-agent fails: its result is marked `{status:"failed"}`, the others continue
+- If < 2 subtasks identified: do not fan-out, handle normally

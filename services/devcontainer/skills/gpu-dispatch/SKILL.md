@@ -1,93 +1,93 @@
 ---
 name: gpu-dispatch
-description: "Lance des sous-tâches indépendantes en parallèle via des sub-agents OpenClaw isolés. Utilise ce skill quand l'utilisateur demande d'analyser, lire ou rechercher sur plusieurs fichiers/sources simultanément — ex: 'analyse ces 3 modules', 'cherche dans ces fichiers', 'documente chaque fichier de ce dossier'. Chaque sous-tâche tourne dans un sub-agent background avec son propre dossier éphémère en écriture, lecture du workspace en lecture seule, accès mcp-docs pour la recherche. Ne pas utiliser si le message contient 'séquentiellement', 'dans l'ordre', 'd'abord puis', 'étape par étape'."
+description: "Launches independent subtasks in parallel via isolated OpenClaw sub-agents. Use this skill when the user asks to analyze, read, or search across multiple files/sources simultaneously — e.g.: 'analyze these 3 modules', 'search in these files', 'document each file in this directory'. Each subtask runs in a background sub-agent with its own ephemeral write directory, read-only workspace access, and mcp-docs access for search. Do not use if the message contains 'sequentially', 'in order', 'first then', 'step by step'."
 metadata: {"openclaw":{"emoji":"⚡","requires":{"bins":["node","curl"],"env":["SCHEDULER_URL"]}}}
 user-invocable: false
 ---
 
-# gpu-dispatch — Fan-out sub-agents isolés
+# gpu-dispatch — Fan-out isolated sub-agents
 
-## Quand l'utiliser
+## When to use
 
-Détecte les requêtes parallélisables :
-- Liste explicite de fichiers ou modules à traiter
-- Mots-clés : "chaque", "tous les", "pour chacun", "chaque fichier", "each file", "for each"
-- Patterns : "analyse X et Y et Z", "documente ces fichiers", "refactorise ces modules"
+Detect parallelizable requests:
+- Explicit list of files or modules to process
+- Keywords: "each", "all the", "for each", "each file", "every file"
+- Patterns: "analyze X and Y and Z", "document these files", "refactor these modules"
 
-Ne pas paralléliser si le message contient : "séquentiellement", "dans l'ordre", "d'abord puis",
-"étape par étape", "step by step", "one by one", "un par un".
+Do not parallelize if the message contains: "sequentially", "in order", "first then",
+"step by step", "one by one".
 
-## Procédure
+## Procedure
 
-### 1. Identifier les sous-tâches
+### 1. Identify the subtasks
 
-Découpe la requête en N tâches indépendantes. Chaque tâche doit être autonome — elle ne dépend
-pas du résultat des autres. Si les tâches sont séquentielles ou dépendantes, réponds normalement
-sans fan-out.
+Break down the request into N independent tasks. Each task must be self-contained — it does not
+depend on the result of the others. If the tasks are sequential or dependent, respond normally
+without fan-out.
 
-### 2. Vérifier la disponibilité GPU
+### 2. Check GPU availability
 
 ```bash
-curl -sf "${SCHEDULER_URL}/health" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); const j=JSON.parse(d); process.stdout.write(j.mode + ' vram=' + (j.totalFree||'?') + 'GB\n')" 2>/dev/null || echo "scheduler indisponible"
+curl -sf "${SCHEDULER_URL}/health" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); const j=JSON.parse(d); process.stdout.write(j.mode + ' vram=' + (j.totalFree||'?') + 'GB\n')" 2>/dev/null || echo "scheduler unavailable"
 ```
 
-Si le scheduler est indisponible, traite les tâches séquentiellement en répondant normalement.
+If the scheduler is unavailable, process the tasks sequentially by responding normally.
 
-### 3. Préparer le dossier éphémère partagé
+### 3. Prepare the shared ephemeral directory
 
 ```bash
 DISPATCH_ID="dispatch-$(date +%s)"
 SHARED_DIR="/tmp/${DISPATCH_ID}"
 mkdir -p "${SHARED_DIR}/results"
-echo "Dossier éphémère : ${SHARED_DIR}"
+echo "Ephemeral directory: ${SHARED_DIR}"
 ```
 
-### 4. Lancer les sub-agents en background
+### 4. Launch sub-agents in background
 
-Pour chaque sous-tâche, lance un sub-agent OpenClaw avec :
-- Son propre dossier éphémère en écriture : `/tmp/${DISPATCH_ID}/task-N/`
-- Accès lecture seule au workspace courant
-- Accès mcp-docs pour la recherche
-- Instruction de sauvegarder son résultat dans `/tmp/${DISPATCH_ID}/results/task-N.md`
-- Notification de fin via `openclaw system event`
+For each subtask, launch an OpenClaw sub-agent with:
+- Its own ephemeral write directory: `/tmp/${DISPATCH_ID}/task-N/`
+- Read-only access to the current workspace
+- mcp-docs access for search
+- Instruction to save its result in `/tmp/${DISPATCH_ID}/results/task-N.md`
+- Completion notification via `openclaw system event`
 
 ```bash
-# Crée le dossier isolé pour la sous-tâche N
+# Create the isolated directory for subtask N
 mkdir -p "/tmp/${DISPATCH_ID}/task-N"
 
-# Lance le sub-agent
+# Launch the sub-agent
 bash pty:false background:true timeout:120 command:"node /opt/stream-proxy/run-subagent.js \
   --task-id task-N \
   --dispatch-id ${DISPATCH_ID} \
   --workspace-read-only ${WORKSPACE_DIR} \
   --ephemeral-dir /tmp/${DISPATCH_ID}/task-N \
   --result-file /tmp/${DISPATCH_ID}/results/task-N.md \
-  --prompt 'TÂCHE ISOLÉE — lecture seule du workspace, écriture uniquement dans /tmp/${DISPATCH_ID}/task-N/\n\nTâche : [description de la sous-tâche N]\n\nQuand tu as terminé, écris ton résultat complet dans /tmp/${DISPATCH_ID}/results/task-N.md'"
+  --prompt 'ISOLATED TASK — read-only workspace access, write only to /tmp/${DISPATCH_ID}/task-N/\n\nTask: [description of subtask N]\n\nWhen you are done, write your complete result to /tmp/${DISPATCH_ID}/results/task-N.md'"
 ```
 
-**Règles de sécurité transmises à chaque sub-agent :**
-- Lecture : tous les fichiers du workspace courant en lecture seule
-- Écriture : UNIQUEMENT dans `/tmp/${DISPATCH_ID}/task-N/` — refuser toute écriture ailleurs
-- Exécution : autorisée uniquement si explicitement nécessaire pour lire/analyser (ex: `cat`, `grep`,
-  `find`, `git log`, `git diff` — jamais `rm`, `mv`, `git commit`, `git push`, ni modification
-  de fichiers hors du dossier éphémère)
-- Réseau : accès mcp-docs uniquement (searxng, devdocs, browserless via proxy)
+**Security rules transmitted to each sub-agent:**
+- Read: all files in the current workspace in read-only mode
+- Write: ONLY in `/tmp/${DISPATCH_ID}/task-N/` — refuse any write elsewhere
+- Execution: allowed only if explicitly necessary to read/analyze (e.g.: `cat`, `grep`,
+  `find`, `git log`, `git diff` — never `rm`, `mv`, `git commit`, `git push`, nor modification
+  of files outside the ephemeral directory)
+- Network: mcp-docs access only (searxng, devdocs, browserless via proxy)
 
-### 5. Attendre les résultats (fan-in)
+### 5. Wait for results (fan-in)
 
-Attends que tous les sub-agents aient écrit leur fichier résultat :
+Wait for all sub-agents to write their result file:
 
 ```bash
-# Script de fan-in — attend tous les fichiers résultats avec timeout
+# Fan-in script — waits for all result files with timeout
 node /opt/stream-proxy/fanin-wait.js \
   --results-dir "/tmp/${DISPATCH_ID}/results" \
   --expected-count N \
   --timeout 120
 ```
 
-### 6. Agréger et répondre
+### 6. Aggregate and respond
 
-Une fois tous les résultats disponibles, lis chaque fichier et compose la réponse finale :
+Once all results are available, read each file and compose the final response:
 
 ```bash
 for f in /tmp/${DISPATCH_ID}/results/*.md; do
@@ -97,32 +97,32 @@ for f in /tmp/${DISPATCH_ID}/results/*.md; do
 done
 ```
 
-Présente les résultats agrégés dans un seul bloc structuré. Si une sous-tâche a échoué
-(fichier absent ou contenant une erreur), signale-le clairement sans bloquer les autres.
+Present the aggregated results in a single structured block. If a subtask failed
+(file absent or containing an error), report it clearly without blocking the others.
 
-### 7. Nettoyage
+### 7. Cleanup
 
 ```bash
 rm -rf "/tmp/${DISPATCH_ID}"
 ```
 
-## Limites
+## Limits
 
-- Maximum 6 sous-tâches en parallèle (limite slots GPU)
-- Timeout par sous-tâche : 120 secondes
-- Si une sous-tâche dépasse le timeout, son résultat est marqué "⏱ Timeout" dans l'agrégation
-- Les sub-agents ne peuvent PAS se parler entre eux pendant l'exécution
-- Les sub-agents ne peuvent PAS modifier le workspace courant ni les fichiers ouverts dans VSCode
+- Maximum 6 subtasks in parallel (GPU slot limit)
+- Timeout per subtask: 120 seconds
+- If a subtask exceeds the timeout, its result is marked "⏱ Timeout" in the aggregation
+- Sub-agents CANNOT communicate with each other during execution
+- Sub-agents CANNOT modify the current workspace or files open in VSCode
 
-## Exemple concret
+## Concrete example
 
-Requête : "Analyse la complexité cyclomatique de src/api.js, src/utils.js et src/auth.js"
+Request: "Analyze the cyclomatic complexity of src/api.js, src/utils.js and src/auth.js"
 
-→ 3 sous-tâches indépendantes :
-  - task-1 : Analyse src/api.js (lecture + analyse statique)
-  - task-2 : Analyse src/utils.js (lecture + analyse statique)
-  - task-3 : Analyse src/auth.js (lecture + analyse statique)
+-> 3 independent subtasks:
+  - task-1: Analyze src/api.js (read + static analysis)
+  - task-2: Analyze src/utils.js (read + static analysis)
+  - task-3: Analyze src/auth.js (read + static analysis)
 
-→ Fan-out : 3 sub-agents lancés en background
-→ Fan-in : agrégation quand les 3 résultats sont disponibles
-→ Réponse : tableau comparatif des 3 fichiers
+-> Fan-out: 3 sub-agents launched in background
+-> Fan-in: aggregation when all 3 results are available
+-> Response: comparative table of the 3 files

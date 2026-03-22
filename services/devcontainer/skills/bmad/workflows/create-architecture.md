@@ -1,74 +1,74 @@
-# Workflow : Architecture Technique
+# Workflow: Technical Architecture
 
-Tu es l'Architecte BMAD. Tu conçois l'architecture technique du projet.
+You are the BMAD Architect. You design the project's technical architecture.
 
-## Input requis
+## Required input
 
-Lire `_bmad-output/planning-artifacts/PRD.md`.
-Si absent, demander de faire `/bmad prd` d'abord.
+Read `_bmad-output/planning-artifacts/PRD.md`.
+If absent, ask to run `/bmad prd` first.
 
-## Questions d'architecture (si non couverts dans le brief)
+## Architecture questions (if not covered in the brief)
 
-1. **Déploiement** — Self-hosted (Docker/K8s) ou cloud ? Contraintes infra ?
-2. **Authentification** — JWT, OAuth, passkeys, session cookie ?
-3. **Temps réel** — WebSocket, SSE, polling ? Ou pas de temps réel ?
-4. **Scale** — Nombre d'utilisateurs simultanés attendus en v1 ?
-5. **API externe** — Intégrations tierces nécessaires ?
+1. **Deployment** — Self-hosted (Docker/K8s) or cloud? Infrastructure constraints?
+2. **Authentication** — JWT, OAuth, passkeys, session cookie?
+3. **Real-time** — WebSocket, SSE, polling? Or no real-time?
+4. **Scale** — Number of concurrent users expected in v1?
+5. **External API** — Required third-party integrations?
 
-## Document à produire
+## Document to produce
 
 ```markdown
-# Architecture Technique — {NOM}
+# Technical Architecture — {NAME}
 
 ## Stack
 
-| Couche | Technologie | Justification |
-|--------|------------|---------------|
+| Layer | Technology | Justification |
+|-------|-----------|---------------|
 | Frontend | ... | ... |
 | Backend | ... | ... |
-| Base de données | ... | ... |
+| Database | ... | ... |
 | Cache | ... | ... |
-| Déploiement | ... | ... |
+| Deployment | ... | ... |
 
-## Composants principaux
+## Main components
 
-### {Composant 1}
-- **Rôle :** ...
-- **Interface :** ...
-- **Dépendances :** ...
+### {Component 1}
+- **Role:** ...
+- **Interface:** ...
+- **Dependencies:** ...
 
-## Modèle de données
-
-```
-{entités principales et relations}
-```
-
-## API — Endpoints principaux
-
-| Méthode | Route | Description |
-|---------|-------|-------------|
-
-## Décisions d'architecture (ADR)
-
-### ADR-001 — {Titre}
-- **Contexte :** ...
-- **Décision :** ...
-- **Conséquences :** ...
-
-## Diagramme de flux
+## Data model
 
 ```
-{flux principal en ASCII}
+{main entities and relationships}
 ```
 
-## Risques techniques
+## API — Main endpoints
 
-| Risque | Probabilité | Impact | Mitigation |
-|--------|------------|--------|-----------|
+| Method | Route | Description |
+|--------|-------|-------------|
+
+## Architecture decisions (ADR)
+
+### ADR-001 — {Title}
+- **Context:** ...
+- **Decision:** ...
+- **Consequences:** ...
+
+## Flow diagram
+
+```
+{main flow in ASCII}
+```
+
+## Technical risks
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|-----------|
 ```
 
 ## Validation
 
-Présenter et itérer avec le user.
-Enregistrer dans `_bmad-output/planning-artifacts/ARCHITECTURE.md`.
-Proposer `/bmad stories`.
+Present and iterate with the user.
+Save to `_bmad-output/planning-artifacts/ARCHITECTURE.md`.
+Suggest `/bmad stories`.

@@ -1,12 +1,12 @@
 ###############################################################################
 # Stack: Kasm Workspaces + Ollama + openclaw-agent + openclaw-chat
 #
-# Toutes les images sont pré-buildées sur GHCR via GitHub Actions.
-# Aucun build local, aucun bind mount de config.
-# Les configs (Squid, SearXNG) sont embarquées dans leurs images et copiées
-# dans les volumes au premier démarrage par leurs entrypoints.
+# All images are pre-built on GHCR via GitHub Actions.
+# No local build, no config bind mounts.
+# Configs (Squid, SearXNG) are embedded in their images and copied
+# into volumes on first startup by their entrypoints.
 #
-# Réseaux externes à vérifier avant démarrage :
+# External networks to verify before startup:
 #   docker network ls | grep -E "coolify|forgejo"
 ###############################################################################
 
@@ -29,21 +29,21 @@ networks:
 
   mcp-net:
     driver: bridge
-    internal: true   # agents ↔ mcp-docs/devdocs/searxng/browserless uniquement
+    internal: true   # agents ↔ mcp-docs/devdocs/searxng/browserless only
 
   proxy-net:
     driver: bridge
-    # pas internal : squid doit pouvoir joindre internet pour proxyfier
+    # not internal: squid needs internet access for proxying
 
   proxy-internal-net:
     driver: bridge
-    internal: true   # openclaw-agent et openclaw-chat ↔ squid uniquement
+    internal: true   # openclaw-agent and openclaw-chat ↔ squid only
 
 volumes:
   ollama_data:
   ollama_cpu_data:
-  gguf_cache:        # cache HuggingFace pour Qwen3.5-27B-Q3_K_M.gguf (13.5GB)
-  project_data:      # contexte projets partagé entre tous les services (mémoire, handoffs, rules)
+  gguf_cache:        # HuggingFace cache for Qwen3.5-27B-Q3_K_M.gguf (13.5GB)
+  project_data:      # shared project context across all services (memory, handoffs, rules)
   devdocs_data:
   searxng_data:
   squid_etc:
@@ -79,11 +79,11 @@ services:
       timeout: 10s
       retries: 3
 
-  # ── Ollama CPU — qwen3.5:0.8b uniquement, zéro VRAM GPU ─────────────────
-  # Utilisé par le gpu-scheduler pour l'analyse d'ambiguïté et l'extraction
-  # structurée des issues (zone grise 45-75). Tourne en CPU, séparé d'ollama
-  # pour garantir zéro interférence avec les inférences GPU en cours.
-  # Aussi utilisé comme tampon conversationnel humain quand les GPU sont saturés.
+  # ── Ollama CPU — qwen3.5:0.8b only, zero GPU VRAM ─────────────────────────
+  # Used by the gpu-scheduler for ambiguity analysis and structured
+  # extraction of issues (gray zone 45-75). Runs on CPU, separate from ollama
+  # to guarantee zero interference with ongoing GPU inferences.
+  # Also used as human conversational buffer when GPUs are saturated.
   ollama-cpu:
     image: ollama/ollama:latest
     container_name: ollama-cpu
@@ -93,24 +93,24 @@ services:
     volumes:
       - ollama_cpu_data:/root/.ollama
     environment:
-      - OLLAMA_NUM_GPU=0          # Force CPU uniquement
-      - OLLAMA_NUM_PARALLEL=2     # Max 2 requêtes simultanées (analyse + tampon)
-      - OLLAMA_KEEP_ALIVE=5m      # Décharge le modèle après 5min d'inactivité
+      - OLLAMA_NUM_GPU=0          # Force CPU only
+      - OLLAMA_NUM_PARALLEL=2     # Max 2 simultaneous requests (analysis + buffer)
+      - OLLAMA_KEEP_ALIVE=5m      # Unload model after 5min idle
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ── Ollama init — pull tous les modèles au premier démarrage ─────────────
-  # Container éphémère (restart: no) qui s'exécute une seule fois.
-  # Attend qu'ollama et ollama-cpu soient healthy, puis :
-  #   - Pull qwen3.5:9b, 4b, 2b depuis le registry Ollama (GPU)
-  #   - Télécharge Qwen3.5-27B-Q3_K_M.gguf depuis HuggingFace et l'importe
-  #   - Pull qwen3.5:0.8b sur ollama-cpu
-  # Les modèles sont persistés dans les volumes ollama_data / ollama_cpu_data.
-  # Au redémarrage du stack, ollama-init retourne 0 immédiatement car les
-  # modèles sont déjà présents (vérification via /api/tags avant pull).
+  # ── Ollama init — pull all models on first startup ─────────────────────────
+  # Ephemeral container (restart: no) that runs once.
+  # Waits for ollama and ollama-cpu to be healthy, then:
+  #   - Pulls qwen3.5:9b, 4b, 2b from the Ollama registry (GPU)
+  #   - Downloads Qwen3.5-27B-Q3_K_M.gguf from HuggingFace and imports it
+  #   - Pulls qwen3.5:0.8b on ollama-cpu
+  # Models are persisted in ollama_data / ollama_cpu_data volumes.
+  # On stack restart, ollama-init returns 0 immediately since models
+  # are already present (checked via /api/tags before pull).
   ollama-init:
     image: ghcr.io/pikatsuto/cdw-ollama-init:latest
     container_name: ollama-init
@@ -130,22 +130,20 @@ services:
       ollama-cpu:
         condition: service_healthy
 
-  # ── Kasm Workspaces ──────────────────────────────────────────────────────────
-  # Workspace interactif à enregistrer dans l'UI Kasm :
   # ── devcontainer — NOTE ───────────────────────────────────────────────────────
-  # Les sessions Code Server sont des containers ÉPHÉMÈRES spawné dynamiquement
-  # par l'orchestrateur (POST /dev/create) — pas un service fixe dans ce compose.
+  # Code Server sessions are EPHEMERAL containers dynamically spawned
+  # by the orchestrator (POST /dev/create) — not a fixed service in this compose.
   #
-  # Image : ghcr.io/pikatsuto/cdw-devcontainer:latest (buildée par le CI)
-  # Spawn via : openclaw-agent → docker run --rm --network coolify ...
-  # URL éphémères via labels Traefik dynamiques : dev-<id>.<DEV_DOMAIN>
+  # Image: ghcr.io/pikatsuto/cdw-devcontainer:latest (built by CI)
+  # Spawn via: openclaw-agent → docker run --rm --network coolify ...
+  # Ephemeral URLs via dynamic Traefik labels: dev-<id>.<DEV_DOMAIN>
   #
-  # Volumes persistants par user (créés automatiquement au premier spawn) :
-  #   dev_user_<userId>_vscode      ← settings VSCode + keybindings
-  #   dev_user_<userId>_extensions  ← extensions installées
-  #   dev_user_<userId>_openclaw    ← config OpenClaw gateway
+  # Persistent per-user volumes (auto-created on first spawn):
+  #   dev_user_<userId>_vscode      ← VSCode settings + keybindings
+  #   dev_user_<userId>_extensions  ← installed extensions
+  #   dev_user_<userId>_openclaw    ← OpenClaw gateway config
   #
-  # Variables à ajouter dans .env :
+  # Variables to add in .env:
   #   DEVCONTAINER_IMAGE, DEVCONTAINER_MEMORY, DEVCONTAINER_CPUS
   #   DEV_DOMAIN, DEV_IDLE_MS
 
@@ -239,9 +237,9 @@ services:
       retries: 3
 
   # ── Squid agent ──────────────────────────────────────────────────────────────
-  # Proxy sortant openclaw-agent. Whitelist partagée via squid_agent_whitelist.
-  # Déblocage à chaud :
-  #   docker exec agent-squid sh -c "echo '.domaine.com' >> /etc/squid/whitelist/whitelist.conf && squid -k reconfigure"
+  # Outbound proxy for openclaw-agent. Shared whitelist via squid_agent_whitelist.
+  # Hot unblock:
+  #   docker exec agent-squid sh -c "echo '.domain.com' >> /etc/squid/whitelist/whitelist.conf && squid -k reconfigure"
   squid:
     image: ghcr.io/pikatsuto/cdw-squid:latest
     container_name: cdw-squid
@@ -262,8 +260,8 @@ services:
       start_period: 20s
 
   # ── openclaw-agent ────────────────────────────────────────────────────────────
-  # Agent de développement autonome, déclenché par webhook Forgejo.
-  # Pas d'UI exposée. Configurer le webhook dans Forgejo :
+  # Autonomous development agent, triggered by Forgejo webhook.
+  # No exposed UI. Configure the webhook in Forgejo:
   #   Repo → Settings → Webhooks → http://openclaw-agent:9000/webhook
   openclaw-agent:
     image: ghcr.io/pikatsuto/cdw-agent:latest
@@ -281,7 +279,7 @@ services:
         condition: service_healthy
     networks:
       - coolify
-      - proxy-internal-net  # ↔ squid (proxy) — pas internet direct
+      - proxy-internal-net  # ↔ squid (proxy) — no direct internet
       - backend             # Ollama
       - mcp-net             # mcp-docs, devdocs, searxng, browserless
     extra_hosts:
@@ -290,7 +288,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}
       - OLLAMA_CPU_URL=http://ollama-cpu:11434
-      # ── Modèles par niveau de complexité ─────────────────────────────────
+      # ── Models by complexity level ──────────────────────────────────────
       - MODEL_COMPLEX=${MODEL_COMPLEX:-qwen3.5:27b-q3_k_m}
       - MODEL_STANDARD=${MODEL_STANDARD:-qwen3.5:9b}
       - MODEL_LIGHT=${MODEL_LIGHT:-qwen3.5:4b}
@@ -300,7 +298,7 @@ services:
       - VRAM_STANDARD=${VRAM_STANDARD:-5}
       - VRAM_LIGHT=${VRAM_LIGHT:-3}
       - VRAM_TRIVIAL=${VRAM_TRIVIAL:-2}
-      # ── Git providers ─────────────────────────────────────────────────────
+      # ── Git providers ───────────────────────────────────────────────────
       - FORGEJO_TOKEN=${FORGEJO_TOKEN}
       - FORGEJO_HOST_PORT=${FORGEJO_HOST_PORT:-3000}
       - GIT_PROVIDER_1=${GIT_PROVIDER_1:-forgejo}
@@ -312,7 +310,7 @@ services:
       - GIT_PROVIDER_2_PRIVATE_KEY_B64=${GIT_PROVIDER_2_PRIVATE_KEY_B64:-}
       - GIT_PROVIDER_2_WEBHOOK_SECRET=${GIT_PROVIDER_2_WEBHOOK_SECRET:-}
       - GIT_PROVIDER_2_INSTALLATION_ID=${GIT_PROVIDER_2_INSTALLATION_ID:-}
-      # ── Contexte projet ───────────────────────────────────────────────────
+      # ── Project context ─────────────────────────────────────────────────
       - PROJECT_DATA_DIR=/projects
       - COOLIFY_HOST_PORT=${COOLIFY_HOST_PORT:-8000}
       - COOLIFY_PREVIEW_DOMAIN=${COOLIFY_PREVIEW_DOMAIN:-}
@@ -336,7 +334,7 @@ services:
       - openclaw_agent_data:/home/kasm-user/.openclaw
       - squid_whitelist:/etc/squid/whitelist
       - project_data:/projects
-      # GitHub App private key (optionnel)
+      # GitHub App private key (optional)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/healthz"]
       interval: 30s
@@ -361,9 +359,9 @@ services:
         condition: service_healthy
     networks:
       - coolify
-      - proxy-internal-net  # ↔ squid (proxy) — pas internet direct
+      - proxy-internal-net  # ↔ squid (proxy) — no direct internet
       - backend
-      - mcp-net    # accès MCP uniquement, pas docs-net direct
+      - mcp-net    # MCP access only, not direct docs-net
     environment:
       - OPENCLAW_GATEWAY_PORT=18791
       - OPENCLAW_GATEWAY_BIND=0.0.0.0
@@ -371,13 +369,13 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}
       - OLLAMA_CPU_URL=http://ollama-cpu:11434
-      # ── Modèles par niveau ────────────────────────────────────────────────
+      # ── Models by level ─────────────────────────────────────────────────
       - MODEL_COMPLEX=${MODEL_COMPLEX:-qwen3.5:27b-q3_k_m}
       - MODEL_STANDARD=${MODEL_STANDARD:-qwen3.5:9b}
       - MODEL_LIGHT=${MODEL_LIGHT:-qwen3.5:4b}
       - MODEL_TRIVIAL=${MODEL_TRIVIAL:-qwen3.5:2b}
       - MODEL_CPU=${MODEL_CPU:-qwen3.5:0.8b}
-      # ── Git providers (lecture seule pour le chat) ────────────────────────
+      # ── Git providers (read-only for chat) ──────────────────────────────
       - FORGEJO_TOKEN=${FORGEJO_TOKEN}
       - AGENT_GIT_LOGIN=${AGENT_GIT_LOGIN:-agent}
       - ORCHESTRATOR_URL=http://openclaw-agent:9001
@@ -388,7 +386,7 @@ services:
       - GIT_PROVIDER_2_APP_ID=${GIT_PROVIDER_2_APP_ID:-}
       - GIT_PROVIDER_2_PRIVATE_KEY_B64=${GIT_PROVIDER_2_PRIVATE_KEY_B64:-}
       - GIT_PROVIDER_2_INSTALLATION_ID=${GIT_PROVIDER_2_INSTALLATION_ID:-}
-      # ── Contexte projet ───────────────────────────────────────────────────
+      # ── Project context ─────────────────────────────────────────────────
       - PROJECT_DATA_DIR=/projects
       - HTTPS_PROXY=http://cdw-squid:3128
       - HTTP_PROXY=http://cdw-squid:3128
@@ -397,7 +395,7 @@ services:
       - EPHEMERAL_CPUS=${EPHEMERAL_CPUS:-0.5}
       - EPHEMERAL_TIMEOUT=${EPHEMERAL_TIMEOUT:-60}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      # ── Dev Container ─────────────────────────────────────────────────
+      # ── Dev Container ───────────────────────────────────────────────────
       - HOST_DOCKER_SOCK=/var/run/host-docker.sock
       - DEVCONTAINER_IMAGE=${DEVCONTAINER_IMAGE:-ghcr.io/pikatsuto/cdw-devcontainer:latest}
       - DEVCONTAINER_MEMORY=${DEVCONTAINER_MEMORY:-4g}
@@ -409,10 +407,10 @@ services:
       - openclaw_chat_data:/home/kasm-user/.openclaw
       - squid_whitelist:/etc/squid/whitelist
       - project_data:/projects
-      # Socket Docker host — monté sous /var/run/host-docker.sock
-      # pour ne PAS écraser le DinD rootless interne du container
-      # DOCKER_HOST=unix:///var/run/host-docker.sock utilisé uniquement
-      # pour spawner les containers Code Server éphémères via Traefik
+      # Host Docker socket — mounted under /var/run/host-docker.sock
+      # to NOT overwrite the internal rootless DinD
+      # DOCKER_HOST=unix:///var/run/host-docker.sock used only
+      # for spawning ephemeral Code Server containers via Traefik
       - /var/run/docker.sock:/var/run/host-docker.sock:ro
     labels:
       - "traefik.enable=true"

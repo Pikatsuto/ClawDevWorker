@@ -1,36 +1,36 @@
 ###############################################################################
 # Stack clawdevworker — TrueNAS Scale / Portainer
 #
-# Compose autonome : toutes les images depuis GHCR, aucun fichier local requis.
-# Variables d'environnement : saisir dans Portainer (Stacks → Environment variables)
+# Standalone compose: all images from GHCR, no local files required.
+# Environment variables: enter in Portainer (Stacks → Environment variables)
 #
-# Variables OBLIGATOIRES :
-#   CHAT_DOMAIN                 ex: chat.example.com
-#   OPENCLAW_GATEWAY_PASSWORD   mot de passe gateway OpenClaw
-#   GIT_PROVIDER_1_TOKEN        token compte agent Forgejo (scope: repo)
-#   FORGEJO_TOKEN               alias du token ci-dessus
+# REQUIRED variables:
+#   CHAT_DOMAIN                 e.g. chat.example.com
+#   OPENCLAW_GATEWAY_PASSWORD   OpenClaw gateway password
+#   GIT_PROVIDER_1_TOKEN        Forgejo agent account token (scope: repo)
+#   FORGEJO_TOKEN               alias of the above token
 #
-# Variables OPTIONNELLES (valeurs par défaut ci-dessous) :
+# OPTIONAL variables (defaults below):
 #   MODEL_COMPLEX               qwen3.5:27b-q3_k_m
 #   MODEL_STANDARD              qwen3.5:9b
 #   MODEL_LIGHT                 qwen3.5:4b
 #   MODEL_TRIVIAL               qwen3.5:2b
 #   MODEL_CPU                   qwen3.5:0.8b
 #   GIT_PROVIDER_1_URL          http://host-gateway:3000
-#   GIT_PROVIDER_2              (vide = GitHub désactivé)
+#   GIT_PROVIDER_2              (empty = GitHub disabled)
 #   GIT_PROVIDER_2_APP_ID       (GitHub App ID)
 #   GIT_PROVIDER_2_INSTALLATION_ID
 #   AGENT_GIT_LOGIN             agent
 #   FORGEJO_HOST_PORT           3000
 #   COOLIFY_HOST_PORT           8000
-#   GITHUB_TOKEN                (vide)
-#   DEV_DOMAIN                  dev.example.com (wildcard DNS requis)
+#   GITHUB_TOKEN                (empty)
+#   DEV_DOMAIN                  dev.example.com (wildcard DNS required)
 #   GATE_MAX_RETRIES            3
 #   LOOP_DETECT_THRESHOLD       2
 #
-# Prérequis TrueNAS :
-#   - Driver NVIDIA : UI TrueNAS → System → NVIDIA Driver → Install
-#   - Réseaux externes Traefik/Coolify et Forgejo déjà existants :
+# TrueNAS prerequisites:
+#   - NVIDIA driver: TrueNAS UI → System → NVIDIA Driver → Install
+#   - External Traefik/Coolify and Forgejo networks already existing:
 #       docker network ls | grep -E "coolify|forgejo"
 ###############################################################################
 
@@ -101,7 +101,7 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── Ollama CPU — orchestration + ambiguïté ────────────────────────────────────
+  # ── Ollama CPU — orchestration + ambiguity ───────────────────────────────────
   ollama-cpu:
     image: ollama/ollama:latest
     container_name: ollama-cpu
@@ -119,7 +119,7 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── ollama-init — téléchargement modèles (éphémère) ──────────────────────────
+  # ── ollama-init — model download (ephemeral) ────────────────────────────────
   ollama-init:
     image: ghcr.io/pikatsuto/cdw-ollama-init:latest
     container_name: ollama-init
@@ -145,7 +145,7 @@ services:
 
 
 
-  # ── DevDocs ───────────────────────────────────────────────────────────────────
+  # ── DevDocs ──────────────────────────────────────────────────────────────────
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest
     container_name: devdocs
@@ -162,7 +162,7 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── SearXNG ───────────────────────────────────────────────────────────────────
+  # ── SearXNG ──────────────────────────────────────────────────────────────────
   searxng:
     image: ghcr.io/pikatsuto/cdw-searxng:latest
     container_name: searxng
@@ -181,7 +181,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── Browserless ───────────────────────────────────────────────────────────────
+  # ── Browserless ──────────────────────────────────────────────────────────────
   browserless:
     image: ghcr.io/pikatsuto/cdw-browserless:latest
     container_name: browserless
@@ -199,7 +199,7 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── MCP Docs ──────────────────────────────────────────────────────────────────
+  # ── MCP Docs ─────────────────────────────────────────────────────────────────
   mcp-docs:
     image: ghcr.io/pikatsuto/cdw-mcp-docs:latest
     container_name: mcp-docs
@@ -228,7 +228,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # ── Squid proxy ───────────────────────────────────────────────────────────────
+  # ── Squid proxy ──────────────────────────────────────────────────────────────
   squid:
     image: ghcr.io/pikatsuto/cdw-squid:latest
     container_name: cdw-squid
@@ -249,8 +249,8 @@ services:
       start_period: 20s
 
   # ── openclaw-agent ────────────────────────────────────────────────────────────
-  # Webhook : Forgejo → http://openclaw-agent:9000/webhook
-  # Commande /retry dans les commentaires pour relancer un pipeline bloqué.
+  # Webhook: Forgejo → http://openclaw-agent:9000/webhook
+  # /retry command in comments to restart a blocked pipeline.
   openclaw-agent:
     image: ghcr.io/pikatsuto/cdw-agent:latest
     container_name: openclaw-agent
@@ -371,7 +371,7 @@ services:
       - HTTP_PROXY=http://cdw-squid:3128
       - NO_PROXY=localhost,127.0.0.1,ollama,ollama-cpu,devdocs,searxng,browserless,mcp-docs,cdw-squid
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      # ── Dev Container ─────────────────────────────────────────────
+      # ── Dev Container ───────────────────────────────────────────────────
       - HOST_DOCKER_SOCK=/var/run/host-docker.sock
       - DEVCONTAINER_IMAGE=${DEVCONTAINER_IMAGE:-ghcr.io/pikatsuto/cdw-devcontainer:latest}
       - DEVCONTAINER_MEMORY=${DEVCONTAINER_MEMORY:-4g}

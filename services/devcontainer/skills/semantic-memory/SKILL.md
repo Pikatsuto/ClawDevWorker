@@ -1,27 +1,27 @@
 ---
 name: semantic-memory
-description: "Mémoire sémantique partagée par projet entre tous les agents et environnements. Stocke les décisions, conventions, et contexte dans un SQLite searchable. Utilise /remember pour retrouver des décisions passées, /learn pour en mémoriser de nouvelles."
+description: "Shared semantic memory per project across all agents and environments. Stores decisions, conventions, and context in a searchable SQLite database. Use /remember to retrieve past decisions, /learn to memorize new ones."
 metadata: {"openclaw":{"emoji":"🧠","requires":{"bins":["node","sqlite3"]}}}
 user-invocable: true
 ---
 
-# semantic-memory — Mémoire Projet Partagée
+# semantic-memory — Shared Project Memory
 
-## Principe
+## Principle
 
-Tous les agents (chat, VSCode, worker) d'un même projet partagent la même mémoire SQLite.
-Elle est persistée dans `/projects/<nom>/memory.db` sur le volume partagé.
+All agents (chat, VSCode, worker) of the same project share the same SQLite memory.
+It is persisted in `/projects/<name>/memory.db` on the shared volume.
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/remember <query>` | Recherche dans la mémoire du projet |
-| `/learn <fait>` | Mémorise un fait ou une décision |
-| `/memory list` | Liste les entrées récentes |
-| `/memory project` | Résumé de tout le contexte du projet |
+| Command | Action |
+|---------|--------|
+| `/remember <query>` | Search in the project memory |
+| `/learn <fact>` | Memorize a fact or decision |
+| `/memory list` | List recent entries |
+| `/memory project` | Summary of the entire project context |
 
-## Structure de la mémoire
+## Memory structure
 
 ```sql
 CREATE TABLE memory (
@@ -29,14 +29,14 @@ CREATE TABLE memory (
   project   TEXT NOT NULL,
   category  TEXT NOT NULL,  -- decision | convention | context | bug | fix
   content   TEXT NOT NULL,
-  tags      TEXT,           -- JSON array de tags
-  source    TEXT,           -- qui l'a écrit : chat | vscode | worker-qa | etc.
+  tags      TEXT,           -- JSON array of tags
+  source    TEXT,           -- who wrote it: chat | vscode | worker-qa | etc.
   created   TEXT NOT NULL,
-  embedding TEXT            -- vecteur simplifié pour recherche sémantique
+  embedding TEXT            -- simplified vector for semantic search
 );
 ```
 
-## Procédure /learn
+## /learn Procedure
 
 ```javascript
 // memory-write.js
@@ -74,12 +74,12 @@ if (content) {
   db.prepare(
     'INSERT INTO memory (project, category, content, tags, source) VALUES (?, ?, ?, ?, ?)'
   ).run(PROJECT_NAME, category, content, tags, SURFACE);
-  console.log('✅ Mémorisé');
+  console.log('✅ Memorized');
 }
 db.close();
 ```
 
-## Procédure /remember
+## /remember Procedure
 
 ```javascript
 // memory-search.js
@@ -92,7 +92,7 @@ const query        = process.argv[2] || '';
 
 const dbPath = path.join(PROJECT_DATA, PROJECT_NAME, 'memory.db');
 if (!require('fs').existsSync(dbPath)) {
-  console.log('Aucune mémoire pour ce projet encore.');
+  console.log('No memory for this project yet.');
   process.exit(0);
 }
 
@@ -106,9 +106,9 @@ const results = db.prepare(`
 `).all(PROJECT_NAME, `%${query}%`);
 
 if (!results.length) {
-  console.log(`Aucun résultat pour "${query}"`);
+  console.log(`No results for "${query}"`);
 } else {
-  console.log(`=== Mémoire projet : "${query}" ===\n`);
+  console.log(`=== Project memory: "${query}" ===\n`);
   for (const r of results) {
     console.log(`[${r.category}] ${r.content}`);
     console.log(`  Source: ${r.source} — ${r.created}\n`);
@@ -117,29 +117,29 @@ if (!results.length) {
 db.close();
 ```
 
-## Alimentation automatique
+## Automatic feeding
 
-À chaque fin de session, le skill mémorise automatiquement :
+At the end of each session, the skill automatically memorizes:
 
 ```bash
-# Décisions prises (extraites du handoff)
+# Decisions made (extracted from the handoff)
 node /opt/skills/semantic-memory/memory-write.js \
-  "Décision: $DECISION" "decision" "$TAGS"
+  "Decision: $DECISION" "decision" "$TAGS"
 
-# Conventions découvertes
+# Conventions discovered
 node /opt/skills/semantic-memory/memory-write.js \
   "Convention: $CONVENTION" "convention"
 
-# Bugs résolus
+# Bugs resolved
 node /opt/skills/semantic-memory/memory-write.js \
-  "Bug résolu: $BUG_DESC — Fix: $FIX_DESC" "fix" "bug"
+  "Bug resolved: $BUG_DESC — Fix: $FIX_DESC" "fix" "bug"
 ```
 
-## Catégories
+## Categories
 
-- `decision` — choix architecturaux, décisions techniques
-- `convention` — conventions de code, naming, structure
-- `context` — informations générales sur le projet
-- `bug` — bugs connus
-- `fix` — corrections apportées
-- `rule` — règles métier importantes
+- `decision` — architectural choices, technical decisions
+- `convention` — code conventions, naming, structure
+- `context` — general project information
+- `bug` — known bugs
+- `fix` — corrections applied
+- `rule` — important business rules

@@ -1,110 +1,110 @@
 ---
 name: spec-init
-description: "Initialise un projet vide via BMAD (PRD → Architecture → User Stories), committe la spec sur main, puis crée automatiquement les issues Forgejo/GitHub avec critères d'acceptance. Les webhooks déclenchent le pipeline RBAC sur chaque issue. C'est le /spec de clawdevworker."
+description: "Initializes an empty project via BMAD (PRD → Architecture → User Stories), commits the spec on main, then automatically creates Forgejo/GitHub issues with acceptance criteria. Webhooks trigger the RBAC pipeline on each issue. This is the /spec of clawdevworker."
 metadata: {"openclaw":{"emoji":"📐","requires":{"bins":["git","node","curl","jq"]}}}
 user-invocable: true
 ---
 
-# spec-init — Du repo vide au pipeline autonome
+# spec-init — From empty repo to autonomous pipeline
 
-## Flow complet
+## Full flow
 
 ```
-/spec init owner/repo "Nom du projet"
+/spec init owner/repo "Project name"
   ↓
-Clone repo vide dans container éphémère
+Clone empty repo into ephemeral container
   ↓
-BMAD interactive (ou mode doc si context fourni)
-  → PRD.md          — vision, objectifs, personas, KPIs
-  → ARCHITECTURE.md — stack, composants, décisions techniques
-  → USER_STORIES.md — stories avec critères d'acceptance
+Interactive BMAD (or doc mode if context provided)
+  → PRD.md          — vision, objectives, personas, KPIs
+  → ARCHITECTURE.md — stack, components, technical decisions
+  → USER_STORIES.md — stories with acceptance criteria
   ↓
-Commit sur main : "chore: initialize project spec via BMAD"
+Commit on main: "chore: initialize project spec via BMAD"
   ↓
-Pour chaque user story :
-  → Créé une issue Forgejo/GitHub avec titre + critères d'acceptance
-  → Assigne au compte agent ($AGENT_GIT_LOGIN)
+For each user story:
+  → Create a Forgejo/GitHub issue with title + acceptance criteria
+  → Assign to the agent account ($AGENT_GIT_LOGIN)
   ↓
-Webhook déclenché → pipeline RBAC autonome démarre
+Webhook triggered → autonomous RBAC pipeline starts
 ```
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/spec init <owner/repo>` | Lance BMAD en mode interactif |
-| `/spec init <owner/repo> --from <brief.md>` | BMAD depuis un brief existant |
-| `/spec status <owner/repo>` | Voir les issues créées et leur état |
-| `/spec add-story <owner/repo> "titre"` | Ajouter une story après init |
+| Command | Action |
+|---------|--------|
+| `/spec init <owner/repo>` | Launch BMAD in interactive mode |
+| `/spec init <owner/repo> --from <brief.md>` | BMAD from an existing brief |
+| `/spec status <owner/repo>` | View created issues and their status |
+| `/spec add-story <owner/repo> "title"` | Add a story after init |
 
-## Procédure /spec init
+## Procedure /spec init
 
-### 1. Cloner le repo
+### 1. Clone the repo
 
 ```bash
 REPO="${1}"            # owner/repo
-PROJECT_NAME="${2}"    # "Nom du projet"
+PROJECT_NAME="${2}"    # "Project name"
 PROVIDER_URL="${GIT_PROVIDER_1_URL:-http://host-gateway:3000}"
 TOKEN="${GIT_PROVIDER_1_TOKEN:-$FORGEJO_TOKEN}"
 
 CLONE_DIR="/tmp/spec-${REPO//\//_}"
 git clone "${PROVIDER_URL}/${REPO}.git" "$CLONE_DIR" 2>/dev/null \
-  || { echo "❌ Impossible de cloner ${REPO}"; exit 1; }
+  || { echo "❌ Unable to clone ${REPO}"; exit 1; }
 
 cd "$CLONE_DIR"
 git config user.email "agent@coderclaw.local"
 git config user.name "CoderClaw Agent"
 ```
 
-### 2. Générer la spec via BMAD
+### 2. Generate the spec via BMAD
 
-Si BMAD est disponible en headless :
+If BMAD is available in headless mode:
 
 ```bash
-# Mode headless avec brief fourni
+# Headless mode with provided brief
 if [ -n "$BRIEF_FILE" ] && [ -f "$BRIEF_FILE" ]; then
-  # BMAD lit le brief et génère la spec sans interaction
+  # BMAD reads the brief and generates the spec without interaction
   openclaw run --skill bmad-spec \
     --input "$BRIEF_FILE" \
     --output-dir "$CLONE_DIR/docs/spec" \
     --model "$MODEL_CPU"
 else
-  # Mode interactif — l'agent dialogue avec l'humain pour construire la spec
+  # Interactive mode — the agent dialogues with the human to build the spec
   cat << 'SPEC_PROMPT'
-Je vais te guider pour créer la spec complète de ton projet.
+I will guide you to create the complete spec for your project.
 
-Réponds à ces questions une par une :
+Answer these questions one by one:
 
-1. **Vision** : En une phrase, c'est quoi ce projet ?
-2. **Utilisateurs** : Qui l'utilise ? (personas)
-3. **Problème résolu** : Quel douleur ça soulage ?
-4. **Fonctionnalités clés** : Liste les 3-5 features essentielles
-5. **Stack technique** : Quels langages/frameworks ?
-6. **Critères de succès** : Comment on sait que c'est réussi ?
+1. **Vision**: In one sentence, what is this project?
+2. **Users**: Who uses it? (personas)
+3. **Problem solved**: What pain does it relieve?
+4. **Key features**: List the 3-5 essential features
+5. **Tech stack**: Which languages/frameworks?
+6. **Success criteria**: How do we know it's successful?
 
-Je génèrerai ensuite PRD.md, ARCHITECTURE.md et USER_STORIES.md.
+I will then generate PRD.md, ARCHITECTURE.md and USER_STORIES.md.
 SPEC_PROMPT
 fi
 ```
 
-### 3. Structure de fichiers générée
+### 3. Generated file structure
 
 ```
 docs/spec/
 ├── PRD.md              ← Product Requirements Document
-├── ARCHITECTURE.md     ← Décisions techniques et stack
-└── USER_STORIES.md     ← Stories avec critères d'acceptance
+├── ARCHITECTURE.md     ← Technical decisions and stack
+└── USER_STORIES.md     ← Stories with acceptance criteria
 .coderclaw/
-├── rules.yaml          ← Pipeline RBAC (copié depuis template)
-└── context.yaml        ← Métadonnées projet
+├── rules.yaml          ← RBAC pipeline (copied from template)
+└── context.yaml        ← Project metadata
 ```
 
-### 4. Commit et push
+### 4. Commit and push
 
 ```bash
 mkdir -p docs/spec .coderclaw
 
-# Copier le template rules.yaml
+# Copy the rules.yaml template
 cp /opt/skills/spec-init/templates/rules.yaml .coderclaw/rules.yaml
 
 # context.yaml
@@ -118,13 +118,13 @@ YAML
 git add docs/spec/ .coderclaw/
 git commit -m "chore: initialize project spec via BMAD"
 git push origin main
-echo "✓ Spec committée sur main"
+echo "✓ Spec committed on main"
 ```
 
-### 5. Créer les issues depuis USER_STORIES.md
+### 5. Create issues from USER_STORIES.md
 
 ```javascript
-// create-issues.js — parse USER_STORIES.md et crée les issues
+// create-issues.js — parse USER_STORIES.md and create issues
 const fs   = require('fs');
 const http = require('http');
 const https = require('https');
@@ -137,15 +137,15 @@ const STORIES_FILE = process.env.STORIES_FILE || 'docs/spec/USER_STORIES.md';
 
 const content = fs.readFileSync(STORIES_FILE, 'utf8');
 
-// Parse les stories — format attendu :
-// ## US-001 — Titre de la story
-// **En tant que** ...
-// **Je veux** ...
-// **Afin de** ...
+// Parse stories — expected format:
+// ## US-001 — Story title
+// **As a** ...
+// **I want** ...
+// **So that** ...
 //
-// ### Critères d'acceptance
-// - [ ] critère 1
-// - [ ] critère 2
+// ### Acceptance criteria
+// - [ ] criterion 1
+// - [ ] criterion 2
 
 const storyRe = /^## (US-\d+[^#\n]*)\n([\s\S]*?)(?=^## US-|\Z)/gm;
 const stories = [];
@@ -158,8 +158,8 @@ while ((m = storyRe.exec(content)) !== null) {
 }
 
 if (!stories.length) {
-  console.log('⚠️ Aucune user story trouvée dans USER_STORIES.md');
-  console.log('Format attendu : ## US-001 — Titre');
+  console.log('⚠️ No user stories found in USER_STORIES.md');
+  console.log('Expected format: ## US-001 — Title');
   process.exit(0);
 }
 
@@ -172,7 +172,7 @@ async function createIssue(story) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
       title:   story.title,
-      body:    story.body + '\n\n---\n*Générée automatiquement par /spec init*',
+      body:    story.body + '\n\n---\n*Automatically generated by /spec init*',
       assignees: [AGENT_LOGIN],
     });
     const opts = {
@@ -192,7 +192,7 @@ async function createIssue(story) {
       res.on('end', () => {
         try {
           const r = JSON.parse(d);
-          console.log(`✓ Issue #${r.number} créée : ${story.title}`);
+          console.log(`✓ Issue #${r.number} created: ${story.title}`);
           resolve(r);
         } catch { reject(new Error(d)); }
       });
@@ -204,44 +204,44 @@ async function createIssue(story) {
 }
 
 (async () => {
-  console.log(`\n=== Création de ${stories.length} issues sur ${REPO} ===\n`);
+  console.log(`\n=== Creating ${stories.length} issues on ${REPO} ===\n`);
   for (const story of stories) {
     try {
       await createIssue(story);
       await new Promise(r => setTimeout(r, 500)); // rate limit
     } catch(e) {
-      console.error(`❌ Erreur : ${story.title} — ${e.message}`);
+      console.error(`❌ Error: ${story.title} — ${e.message}`);
     }
   }
-  console.log('\n✅ Issues créées. Le pipeline RBAC va démarrer automatiquement via webhook.');
+  console.log('\n✅ Issues created. The RBAC pipeline will start automatically via webhook.');
 })();
 ```
 
 ```bash
-# Lancer la création des issues
+# Launch issue creation
 STORIES_FILE="$CLONE_DIR/docs/spec/USER_STORIES.md" \
 REPO="$REPO" \
   node /opt/skills/spec-init/create-issues.js
 ```
 
-## Template USER_STORIES.md
+## USER_STORIES.md template
 
 ```markdown
-# User Stories — {NOM DU PROJET}
+# User Stories — {PROJECT NAME}
 
-## US-001 — Authentification utilisateur
+## US-001 — User authentication
 
-**En tant que** visiteur non connecté
-**Je veux** pouvoir créer un compte et me connecter
-**Afin de** accéder aux fonctionnalités protégées
+**As a** non-logged-in visitor
+**I want** to be able to create an account and log in
+**So that** I can access protected features
 
-### Critères d'acceptance
+### Acceptance criteria
 
-- [ ] Formulaire d'inscription avec email + mot de passe
-- [ ] Validation email obligatoire
-- [ ] Connexion avec JWT (expiry 24h)
-- [ ] Page de réinitialisation de mot de passe
-- [ ] Protection des routes privées (redirect si non connecté)
+- [ ] Registration form with email + password
+- [ ] Mandatory email validation
+- [ ] Login with JWT (expiry 24h)
+- [ ] Password reset page
+- [ ] Private route protection (redirect if not logged in)
 
 ## US-002 — ...
 ```

@@ -1,9 +1,9 @@
 """
-browserless/server.py — Serveur HTTP de fetch de pages via nodriver (Chrome undetected)
+browserless/server.py — HTTP server for fetching pages via nodriver (Chrome undetected)
 
-Endpoint :
+Endpoint:
   GET /content?url=<url>&timeout=<ms>
-  → Retourne le contenu texte de la page (HTML strippé des scripts/styles)
+  → Returns the text content of the page (HTML stripped of scripts/styles)
 
   GET /health
   → {"status": "ok"}
@@ -19,7 +19,7 @@ from fastapi.responses import PlainTextResponse
 
 app = FastAPI(title="browserless-nodriver", version="1.0.0")
 
-# Pool de browsers (un seul suffit, les tabs sont isolés)
+# Browser pool (one is enough, tabs are isolated)
 _browser = None
 _browser_lock = asyncio.Lock()
 
@@ -42,7 +42,7 @@ async def get_browser():
 
 
 def strip_html(html: str) -> str:
-    """Strip scripts, styles et balises HTML — retourne du texte brut."""
+    """Strip scripts, styles and HTML tags — returns plain text."""
     html = re.sub(r'<script[^>]*>[\s\S]*?</script>', ' ', html, flags=re.IGNORECASE)
     html = re.sub(r'<style[^>]*>[\s\S]*?</style>', ' ', html, flags=re.IGNORECASE)
     html = re.sub(r'<[^>]+>', ' ', html)
@@ -57,25 +57,25 @@ async def health():
 
 @app.get("/content", response_class=PlainTextResponse)
 async def fetch_content(
-    url: str = Query(..., description="URL à fetcher"),
-    timeout: int = Query(8000, description="Timeout en ms")
+    url: str = Query(..., description="URL to fetch"),
+    timeout: int = Query(8000, description="Timeout in ms")
 ):
     url = unquote(url)
     if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL invalide")
+        raise HTTPException(status_code=400, detail="Invalid URL")
 
     try:
         browser = await get_browser()
         tab = await browser.get(url)
 
-        # Attendre que la page soit chargée (max timeout/1000 secondes)
+        # Wait for the page to load (max timeout/1000 seconds)
         await asyncio.sleep(min(timeout / 1000, 5))
 
         html = await tab.get_content()
         await tab.close()
 
         text = strip_html(html)
-        # Tronquer à 50k chars max
+        # Truncate to 50k chars max
         return text[:50000]
 
     except asyncio.TimeoutError:

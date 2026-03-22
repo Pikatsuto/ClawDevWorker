@@ -1,9 +1,9 @@
 FROM searxng/searxng:latest
 
-# Config par défaut embarquée dans l'image
+# Default config embedded in the image
 COPY services/searxng/settings.yml /etc/default/searxng/settings.yml
 
-# Entrypoint — initialise /etc/searxng au premier démarrage du volume
+# Entrypoint — initializes /etc/searxng on first volume startup
 COPY services/searxng/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

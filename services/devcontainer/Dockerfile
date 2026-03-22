@@ -1,24 +1,24 @@
 ###############################################################################
-# kasm-devcontainer — Image de base pour les sessions dev éphémères
+# kasm-devcontainer — Base image for ephemeral dev sessions
 #
-# Remplace kasm-openclaw (Kasm VNC/XFCE).
-# Contient :
-#   - Code Server (VSCode dans le navigateur)
-#   - OpenClaw gateway (depuis coollabsio/openclaw, configure.js inclus)
-#   - Stacks dev : Node 22 + Python 3 + Rust + Go + Git
-#   - Nos skills + config VSCode identique à l'ancien kasm-openclaw
+# Replaces kasm-openclaw (Kasm VNC/XFCE).
+# Contains:
+#   - Code Server (VSCode in the browser)
+#   - OpenClaw gateway (from coollabsio/openclaw, configure.js included)
+#   - Dev stacks: Node 22 + Python 3 + Rust + Go + Git
+#   - Our skills + VSCode config identical to the old kasm-openclaw
 #
-# Usage : container éphémère spawné dynamiquement par l'orchestrateur
-#   - Volume par user : ~/.config/Code/User + extensions + ~/.openclaw
-#   - Repo cloné dans /workspace au démarrage
-#   - Devcontainer.json du repo → postCreateCommand exécuté si présent
-#   - Détruit à /dev release (--rm)
+# Usage: ephemeral container dynamically spawned by the orchestrator
+#   - Per-user volume: ~/.config/Code/User + extensions + ~/.openclaw
+#   - Repo cloned into /workspace at startup
+#   - Repo's devcontainer.json → postCreateCommand executed if present
+#   - Destroyed on /dev release (--rm)
 ###############################################################################
 
-# ── Stage 1 : OpenClaw depuis coollabsio (configure.js + nginx inclus) ────────
+# ── Stage 1: OpenClaw from coollabsio (configure.js + nginx included) ────────
 FROM coollabsio/openclaw:latest AS openclaw-base
 
-# ── Stage 2 : Image finale ────────────────────────────────────────────────────
+# ── Stage 2: Final image ─────────────────────────────────────────────────────
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -29,14 +29,14 @@ ENV HOME=/home/coder \
     SHELL=/bin/bash \
     PATH=/home/coder/.cargo/bin:/usr/local/go/bin:/home/coder/.local/bin:$PATH
 
-# ── Utilisateur coder (non-root) ──────────────────────────────────────────────
-# Ubuntu 24.04 crée un user "ubuntu" avec UID 1000 par défaut — on le supprime
+# ── Coder user (non-root) ────────────────────────────────────────────────────
+# Ubuntu 24.04 creates a default "ubuntu" user with UID 1000 — remove it
 RUN userdel -r ubuntu 2>/dev/null || true \
  && groupdel ubuntu 2>/dev/null || true \
  && groupadd --gid 1000 coder \
  && useradd --uid 1000 --gid coder --shell /bin/bash --create-home coder
 
-# ── Dépendances système ───────────────────────────────────────────────────────
+# ── System dependencies ──────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl wget git ca-certificates gnupg \
         build-essential pkg-config libssl-dev \
@@ -73,18 +73,18 @@ RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_S
  && dpkg -i /tmp/code-server.deb \
  && rm /tmp/code-server.deb
 
-# ── OpenClaw — copié depuis coollabsio ────────────────────────────────────────
+# ── OpenClaw — copied from coollabsio ────────────────────────────────────────
 COPY --from=openclaw-base /usr/local/lib/node_modules/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
 COPY --from=openclaw-base /scripts /opt/openclaw-scripts
-# configure.js de coollabsio — génère openclaw.json depuis env vars
+# coollabsio's configure.js — generates openclaw.json from env vars
 COPY --from=openclaw-base /scripts/configure.js /opt/openclaw-scripts/configure.js
 
 # ── mcp-docs ──────────────────────────────────────────────────────────────────
 COPY services/mcp-docs/ /opt/mcp-docs/
 RUN cd /opt/mcp-docs && npm install --omit=dev
 
-# ── git-provider (pour /project status dans Code Server) ─────────────────────
+# ── git-provider (for /project status in Code Server) ─────────────────────────
 COPY services/git-provider/ /opt/git-provider/
 
 # ── Skills ────────────────────────────────────────────────────────────────────
@@ -106,19 +106,19 @@ RUN mkdir -p /opt/scripts/spec
 COPY services/chat/scripts/spec/spec-init.js          /opt/scripts/spec/spec-init.js
 RUN chmod -R a+rX /opt/skills/ /opt/specialists/ /opt/openclaw-scripts/ /opt/scripts/
 
-# ── Config VSCode (identique à l'ancien kasm-openclaw) ────────────────────────
-# Copiée dans /opt pour être installée dans le volume user au premier démarrage
+# ── VSCode config (identical to the old kasm-openclaw) ────────────────────────
+# Copied to /opt to be installed into the user volume on first startup
 COPY services/devcontainer/config/vscode/settings.json \
      /opt/devcontainer/config/vscode/settings.json
 COPY services/devcontainer/config/vscode/extensions.txt \
      /opt/devcontainer/config/vscode/extensions.txt
 
-# ── Script de démarrage ───────────────────────────────────────────────────────
+# ── Startup script ────────────────────────────────────────────────────────────
 COPY services/devcontainer/scripts/start-devcontainer.sh /start.sh
 RUN chmod +x /start.sh
 
-# ── Répertoires de volumes (créés pour la clarté) ─────────────────────────────
-# Ces chemins seront montés en volumes par user au runtime
+# ── Volume directories (created for clarity) ──────────────────────────────────
+# These paths will be mounted as per-user volumes at runtime
 RUN mkdir -p \
       /home/coder/.config/Code/User \
       /home/coder/.local/share/code-server \

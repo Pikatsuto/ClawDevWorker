@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-agent.sh — Agent de développement autonome (headless, DinD rootless)
+# start-agent.sh — Autonomous development agent (headless, DinD rootless)
 #
-# Déclenchement : webhook Forgejo (issue assignée au compte agent)
-# Flux :
-#   1. Forgejo assigne une issue → webhook POST /webhook
-#   2. Clone le repo, lit le contexte BMAD si présent dans le repo
-#   3. Pose ses questions en commentaire sur l'issue si besoin, s'arrête
-#   4. Code dans des containers éphémères isolés (--network none)
-#   5. Ouvre une PR "Closes #N"
-#   6. Répond aux review comments sur la PR
+# Trigger: Forgejo webhook (issue assigned to agent account)
+# Flow:
+#   1. Forgejo assigns an issue → webhook POST /webhook
+#   2. Clones the repo, reads BMAD context if present in the repo
+#   3. Posts clarifying questions as issue comments if needed, then stops
+#   4. Codes in isolated ephemeral containers (--network none)
+#   5. Opens a PR "Closes #N"
+#   6. Responds to review comments on the PR
 ###############################################################################
 
 set -euo pipefail
@@ -32,12 +32,12 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 log() { echo "[agent] $(date '+%H:%M:%S') $*"; }
 
 if [ -z "$FORGEJO_TOKEN" ]; then
-    log "ERREUR : FORGEJO_TOKEN non défini."
+    log "ERROR: FORGEJO_TOKEN not set."
     exit 1
 fi
 
-# ── 1. Démarrer dockerd rootless ─────────────────────────────────────────────
-log "Démarrage de dockerd rootless..."
+# ── 1. Start dockerd rootless ─────────────────────────────────────────────
+log "Starting dockerd rootless..."
 export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
@@ -47,30 +47,30 @@ dockerd-rootless.sh --experimental --storage-driver=overlay2 \
     > /tmp/dockerd-rootless.log 2>&1 &
 DOCKERD_PID=$!
 
-log "Attente du socket Docker..."
+log "Waiting for Docker socket..."
 for i in $(seq 1 30); do
     docker info >/dev/null 2>&1 && break
     sleep 1
 done
-docker info >/dev/null 2>&1 || { log "ERREUR: dockerd rootless n'a pas démarré"; exit 1; }
-log "dockerd rootless prêt (PID=$DOCKERD_PID)"
+docker info >/dev/null 2>&1 || { log "ERROR: dockerd rootless failed to start"; exit 1; }
+log "dockerd rootless ready (PID=$DOCKERD_PID)"
 
-# ── 2. Pre-pull des images éphémères ─────────────────────────────────────────
-log "Pre-pull des images éphémères..."
+# ── 2. Pre-pull ephemeral images ──────────────────────────────────────────
+log "Pre-pulling ephemeral images..."
 for img in python:3.12-slim node:22-slim ubuntu:24.04 bash:5; do
     docker image inspect "$img" >/dev/null 2>&1 \
-        && log "  $img — déjà présente" \
-        || { log "  Pull $img..."; docker pull "$img" 2>/dev/null && log "  $img — OK" || log "  $img — échec (ignoré)"; }
+        && log "  $img — already present" \
+        || { log "  Pulling $img..."; docker pull "$img" 2>/dev/null && log "  $img — OK" || log "  $img — failed (ignored)"; }
 done
 
-# ── 3. Whitelist Squid ────────────────────────────────────────────────────────
-log "Génération de la whitelist Squid..."
+# ── 3. Squid whitelist ──────────────────────────────────────────────────────
+log "Generating Squid whitelist..."
 export COOLIFY_PREVIEW_DOMAIN
 node << 'NODESCRIPT'
 const fs = require('fs');
 
 const lines = [
-  '# Whitelist agent — générée au démarrage',
+  '# Agent whitelist — generated at startup',
   '',
   '# Package managers',
   'pypi.org',
@@ -88,7 +88,7 @@ const lines = [
   'raw.githubusercontent.com',
   'objects.githubusercontent.com',
   '',
-  '# Images Docker éphémères',
+  '# Ephemeral Docker images',
   'registry-1.docker.io',
   'auth.docker.io',
   'production.cloudflare.docker.com',
@@ -97,7 +97,7 @@ const lines = [
 
 const previewDomain = process.env.COOLIFY_PREVIEW_DOMAIN || '';
 if (previewDomain) {
-  lines.push('', '# Coolify previews éphémères');
+  lines.push('', '# Ephemeral Coolify previews');
   lines.push('.' + previewDomain);
   lines.push('sslip.io');
 }
@@ -108,23 +108,23 @@ try {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, lines.join('\n') + '\n');
   const domains = lines.filter(l => l && !l.startsWith('#')).length;
-  console.log('whitelist.conf écrit (' + domains + ' domaines) → ' + file);
+  console.log('whitelist.conf written (' + domains + ' domains) → ' + file);
 } catch (e) {
-  console.error('ERREUR écriture whitelist :', e.message);
+  console.error('ERROR writing whitelist:', e.message);
   process.exit(1);
 }
 NODESCRIPT
 
 docker exec agent-squid squid -k reconfigure 2>/dev/null \
-    && log "agent-squid rechargé" \
-    || log "agent-squid non joignable — sera actif au prochain démarrage"
+    && log "agent-squid reloaded" \
+    || log "agent-squid unreachable — will be active on next startup"
 
-# ── 4. Skills ─────────────────────────────────────────────────────────────────
+# ── 4. Skills ─────────────────────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR/skills"
 
 for skill in docker-exec cpu-status loop-detect spec-init session-handoff semantic-memory project-context frontend-design staged-diff; do
     if [ -d "/opt/skills/${skill}" ]; then
-        log "Installation/mise à jour skill ${skill}..."
+        log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
     fi
 done
@@ -134,7 +134,7 @@ export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/projects}"
 export SURFACE="agent"
 export PROXY_URL="${PROXY_URL:-http://agent-squid:3128}"
 
-# ── 5. Générer openclaw.json ──────────────────────────────────────────────────
+# ── 5. Generate openclaw.json ─────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR"
 chmod 700 "$OPENCLAW_DIR"
 mkdir -p "$OPENCLAW_DIR/workspace/memory"
@@ -147,7 +147,7 @@ fi
 GATEWAY_TOKEN=$(cat "$OPENCLAW_DIR/.gateway_token")
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    log "Génération de openclaw.json..."
+    log "Generating openclaw.json..."
     export CONFIG_FILE WEBHOOK_PORT GATEWAY_TOKEN OLLAMA_URL OLLAMA_MODEL PROXY_URL
     export FORGEJO_URL FORGEJO_TOKEN COOLIFY_URL COOLIFY_PREVIEW_DOMAIN
     export OPENCLAW_DIR EPHEMERAL_MEMORY EPHEMERAL_CPUS EPHEMERAL_TIMEOUT GITHUB_TOKEN
@@ -173,51 +173,51 @@ const fPort         = process.env.FORGEJO_HOST_PORT || '3000';
 const cPort         = process.env.COOLIFY_HOST_PORT || '8000';
 
 const previewLine = previewDomain
-  ? `- Previews Coolify : *.${previewDomain}`
-  : '- Previews Coolify : non configuré (COOLIFY_PREVIEW_DOMAIN non défini)';
+  ? `- Coolify previews: *.${previewDomain}`
+  : '- Coolify previews: not configured (COOLIFY_PREVIEW_DOMAIN not set)';
 
-const systemPrompt = `Tu es un agent de développement autonome.
+const systemPrompt = `You are an autonomous development agent.
 
-# Fonctionnement
+# How it works
 
-Tu es déclenché par un webhook Forgejo quand une issue t'est assignée.
-Tu travailles seul, sans interaction humaine pendant l'exécution.
-Tu communiques UNIQUEMENT via les commentaires Forgejo (issue et PR).
+You are triggered by a Forgejo webhook when an issue is assigned to you.
+You work alone, without human interaction during execution.
+You communicate ONLY via Forgejo comments (issue and PR).
 
-# Processus pour chaque issue
+# Process for each issue
 
-1. Lis l'issue en entier ainsi que ses commentaires existants
-2. Si le repo contient des fichiers BMAD (docs/bmad/, .bmad/, bmad/ ou similaire),
-   lis-les pour comprendre l'architecture, les conventions et le contexte du projet
-3. Si tu as des questions bloquantes avant de commencer, commente sur l'issue
-   et ARRÊTE-TOI — tu seras redéclenché quand l'humain répondra
-4. Crée une branche : agent/issue-{numéro}-{slug-du-titre}
-5. Code dans des containers éphémères isolés via docker-exec
-6. Commits atomiques avec messages explicites
-7. Ouvre une PR avec "Closes #{numéro}" dans la description
-8. Si la PR reçoit des review comments, reprends sur la même branche et réponds
+1. Read the entire issue and its existing comments
+2. If the repo contains BMAD files (docs/bmad/, .bmad/, bmad/ or similar),
+   read them to understand the architecture, conventions and project context
+3. If you have blocking questions before starting, comment on the issue
+   and STOP — you will be re-triggered when the human responds
+4. Create a branch: agent/issue-{number}-{title-slug}
+5. Code in isolated ephemeral containers via docker-exec
+6. Atomic commits with explicit messages
+7. Open a PR with "Closes #{number}" in the description
+8. If the PR receives review comments, resume on the same branch and respond
 
-# Architecture réseau
+# Network architecture
 
-Hôtes joignables :
-- ollama              → LLM local, seul fournisseur d'inférence
-- host-gateway:${fPort}  → Forgejo (lecture issues, push branches, PR, commentaires)
-- host-gateway:${cPort}  → Coolify (déclenchement previews uniquement)
-- mcp-docs            → documentation technique (devdocs, searxng, browserless)
+Reachable hosts:
+- ollama              → local LLM, sole inference provider
+- host-gateway:${fPort}  → Forgejo (read issues, push branches, PR, comments)
+- host-gateway:${cPort}  → Coolify (trigger previews only)
+- mcp-docs            → technical documentation (devdocs, searxng, browserless)
 ${previewLine}
 
-Internet via proxy ${proxyUrl} (whitelist stricte, tout est loggué) :
-- npm, pypi, crates.io, github.com et CDN associés
-- Images Docker éphémères (docker.io)
+Internet via proxy ${proxyUrl} (strict whitelist, everything is logged):
+- npm, pypi, crates.io, github.com and associated CDNs
+- Ephemeral Docker images (docker.io)
 
-Containers éphémères : réseau none, ${mem} RAM, ${cpus} CPU, ${timeout}s max
+Ephemeral containers: network none, ${mem} RAM, ${cpus} CPU, ${timeout}s max
 
-# Limites absolues
+# Absolute limits
 
-- Tu ne merges JAMAIS toi-même une PR
-- Tu ne déploies JAMAIS en production directement
-- Tu ne modifies JAMAIS la configuration de l'infrastructure
-- En cas de doute sur le périmètre, tu commentes sur l'issue et tu attends`;
+- You NEVER merge a PR yourself
+- You NEVER deploy to production directly
+- You NEVER modify infrastructure configuration
+- When in doubt about scope, comment on the issue and wait`;
 
 const config = {
   gateway: {
@@ -259,7 +259,7 @@ const config = {
     list: [
       {
         id: 'dev-agent',
-        name: 'Agent Dev',
+        name: 'Dev Agent',
         systemPrompt,
         provider: 'ollama',
         model: ollamaModel,
@@ -298,16 +298,16 @@ const config = {
 
 fs.mkdirSync(path.dirname(process.env.CONFIG_FILE), { recursive: true, mode: 0o700 });
 fs.writeFileSync(process.env.CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
-console.log('openclaw.json généré');
+console.log('openclaw.json generated');
 NODESCRIPT
 
 else
-    log "Config existante — token rechargé"
+    log "Existing config — token reloaded"
 fi
 
-# ── 6. Démarrer le gateway OpenClaw ──────────────────────────────────────────
-log "Démarrage gateway OpenClaw webhook sur :${WEBHOOK_PORT}..."
-log "→ Configurer dans Forgejo : Settings → Webhooks → http://openclaw-agent:${WEBHOOK_PORT}/webhook"
+# ── 6. Start the OpenClaw gateway ─────────────────────────────────────────
+log "Starting OpenClaw gateway webhook on :${WEBHOOK_PORT}..."
+log "→ Configure in Forgejo: Settings → Webhooks → http://openclaw-agent:${WEBHOOK_PORT}/webhook"
 
 exec env \
     HTTP_PROXY="$PROXY_URL" \
@@ -321,8 +321,8 @@ exec env \
         --bind "0.0.0.0" \
         --config "$CONFIG_FILE"
 
-# ── 7. Démarrer le GPU Scheduler ─────────────────────────────────────────────
-log "Démarrage GPU Scheduler sur :${SCHEDULER_PORT:-7070}..."
+# ── 7. Start the GPU Scheduler ────────────────────────────────────────────
+log "Starting GPU Scheduler on :${SCHEDULER_PORT:-7070}..."
 export SCHEDULER_PORT="${SCHEDULER_PORT:-7070}"
 export HUMAN_IDLE_MS="${HUMAN_IDLE_MS:-1800000}"
 export POLL_INTERVAL_MS="${POLL_INTERVAL_MS:-15000}"
@@ -330,13 +330,13 @@ export OPENCLAW_AGENT_URL="http://localhost:${WEBHOOK_PORT}"
 
 node /opt/gpu-scheduler/index.js &
 GPU_SCHEDULER_PID=$!
-log "GPU Scheduler démarré (PID=${GPU_SCHEDULER_PID})"
+log "GPU Scheduler started (PID=${GPU_SCHEDULER_PID})"
 
-# Démarrer l'orchestrateur
+# Start the orchestrator
 ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-9001}"
 MEMORY_DIR="${OPENCLAW_DIR}/workspace/memory"
 WORKER_IMAGE="${WORKER_IMAGE:-ghcr.io/pikatsuto/cdw-worker:latest}"
 
 node /opt/orchestrator/index.js &
 ORCHESTRATOR_PID=$!
-log "Orchestrateur démarré (PID=${ORCHESTRATOR_PID})"
+log "Orchestrator started (PID=${ORCHESTRATOR_PID})"

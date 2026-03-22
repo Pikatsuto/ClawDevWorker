@@ -1,26 +1,26 @@
 ---
 name: project-context
-description: "Charge le contexte d'un projet pour travailler dessus dans n'importe quel environnement. /project select charge la mémoire et les conventions. /project status montre les issues et PRs en cours. /project code charge le code en lecture seule (explicite). Partage le contexte entre chat, VSCode et worker."
+description: "Loads a project's context to work on it in any environment. /project select loads memory and conventions. /project status shows current issues and PRs. /project code loads code in read-only mode (explicit). Shares context between chat, VSCode and worker."
 metadata: {"openclaw":{"emoji":"📁","requires":{"bins":["node","git","curl"],"env":["PROJECT_DATA_DIR"]}}}
 user-invocable: true
 ---
 
-# project-context — Contexte Projet Multi-environnements
+# project-context — Multi-environment Project Context
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/project list` | Liste les projets configurés |
-| `/project select <nom>` | Charge le contexte du projet |
-| `/project status` | Issues et PRs en cours (API git) |
-| `/project code` | Charge le code en lecture seule (explicite) |
-| `/project memory` | Affiche la mémoire du projet |
-| `/project rules` | Affiche les règles pipeline du projet |
+| Command | Action |
+|---------|--------|
+| `/project list` | List configured projects |
+| `/project select <name>` | Load project context |
+| `/project status` | Current issues and PRs (git API) |
+| `/project code` | Load code in read-only mode (explicit) |
+| `/project memory` | Display project memory |
+| `/project rules` | Display project pipeline rules |
 
-## Procédure /project select
+## Procedure /project select
 
-### 1. Charger les fichiers .coderclaw/ du projet
+### 1. Load project .coderclaw/ files
 
 ```bash
 PROJECT_DATA="${PROJECT_DATA_DIR:-/projects}"
@@ -28,121 +28,121 @@ PROJECT_NAME="$1"
 PROJECT_DIR="$PROJECT_DATA/$PROJECT_NAME"
 
 if [ ! -d "$PROJECT_DIR" ]; then
-  echo "Projet '$PROJECT_NAME' introuvable. Projets disponibles :"
+  echo "Project '$PROJECT_NAME' not found. Available projects:"
   ls "$PROJECT_DATA" 2>/dev/null
   exit 1
 fi
 
 export PROJECT_NAME
-echo "=== Projet : $PROJECT_NAME ==="
+echo "=== Project: $PROJECT_NAME ==="
 
-# Charger les fichiers de contexte dans l'ordre
+# Load context files in order
 for f in context.yaml architecture.md rules.yaml design.md; do
   FILE="$PROJECT_DIR/$f"
   [ -f "$FILE" ] && echo "--- $f ---" && cat "$FILE" && echo ""
 done
 ```
 
-### 2. Afficher la mémoire récente
+### 2. Display recent memory
 
 ```bash
 node /opt/skills/semantic-memory/memory-search.js "" 2>/dev/null | head -30
 ```
 
-### 3. Afficher le dernier handoff
+### 3. Display the last handoff
 
 ```bash
 LAST_HANDOFF=$(ls -t "$PROJECT_DIR/sessions"/*.yaml 2>/dev/null | head -1)
 if [ -n "$LAST_HANDOFF" ]; then
-  echo "=== Dernier handoff ==="
+  echo "=== Last handoff ==="
   cat "$LAST_HANDOFF"
 fi
 ```
 
-## Procédure /project status
+## Procedure /project status
 
-Récupère les issues et PRs ouvertes via l'API git provider :
+Fetches open issues and PRs via the git provider API:
 
 ```bash
-# Variables injectées par l'environnement
+# Variables injected by the environment
 GIT_REPO="${PROJECT_REPO:-}"  # owner/repo
 GIT_URL="${FORGEJO_URL:-https://api.github.com}"
 GIT_TOKEN="${FORGEJO_TOKEN:-$GITHUB_TOKEN}"
 
 if [ -z "$GIT_REPO" ]; then
-  echo "PROJECT_REPO non configuré pour ce projet"
+  echo "PROJECT_REPO not configured for this project"
   exit 1
 fi
 
-# Issues ouvertes
-echo "=== Issues ouvertes ==="
+# Open issues
+echo "=== Open issues ==="
 curl -sf -H "Authorization: token $GIT_TOKEN" \
   "$GIT_URL/api/v1/repos/$GIT_REPO/issues?type=issues&state=open&limit=10" \
   2>/dev/null | node -e "
     const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-    if (!Array.isArray(d)) { console.log('Erreur API'); process.exit(1); }
+    if (!Array.isArray(d)) { console.log('API error'); process.exit(1); }
     d.slice(0,10).forEach(i => {
       const labels = (i.labels||[]).map(l=>l.name).join(', ');
       console.log(\`#\${i.number} [\${labels||'no label'}] \${i.title}\`);
     });
-  " 2>/dev/null || echo "(API indisponible)"
+  " 2>/dev/null || echo "(API unavailable)"
 
-# PRs ouvertes
+# Open PRs
 echo ""
-echo "=== Pull Requests ouvertes ==="
+echo "=== Open Pull Requests ==="
 curl -sf -H "Authorization: token $GIT_TOKEN" \
   "$GIT_URL/api/v1/repos/$GIT_REPO/pulls?state=open&limit=10" \
   2>/dev/null | node -e "
     const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-    if (!Array.isArray(d)) { console.log('Erreur API'); process.exit(1); }
+    if (!Array.isArray(d)) { console.log('API error'); process.exit(1); }
     d.slice(0,10).forEach(p => {
       console.log(\`PR #\${p.number} [\${p.head?.ref}→\${p.base?.ref}] \${p.title}\`);
     });
-  " 2>/dev/null || echo "(API indisponible)"
+  " 2>/dev/null || echo "(API unavailable)"
 ```
 
-## Procédure /project code (explicite)
+## Procedure /project code (explicit)
 
-Charge le code en lecture seule — uniquement sur demande explicite :
+Loads code in read-only mode — only on explicit request:
 
 ```bash
 CLONE_DIR="/tmp/project-readonly-$PROJECT_NAME"
 
 if [ ! -d "$CLONE_DIR" ]; then
-  # Clone en lecture seule (shallow, read-only token si dispo)
+  # Read-only clone (shallow, read-only token if available)
   git clone --depth=10 \
     "${GIT_READ_URL:-$GIT_URL/$GIT_REPO.git}" \
     "$CLONE_DIR" 2>/dev/null \
-    || { echo "Clone échoué — vérifier GIT_READ_URL"; exit 1; }
-  echo "✅ Code cloné dans $CLONE_DIR (lecture seule)"
+    || { echo "Clone failed — check GIT_READ_URL"; exit 1; }
+  echo "✅ Code cloned into $CLONE_DIR (read-only)"
 else
   git -C "$CLONE_DIR" pull --quiet
-  echo "✅ Code mis à jour"
+  echo "✅ Code updated"
 fi
 
-echo "Fichiers disponibles en lecture :"
+echo "Files available for reading:"
 find "$CLONE_DIR" -type f \
   ! -path "*/.git/*" ! -path "*/node_modules/*" \
   | sed "s|$CLONE_DIR/||" | head -30
-echo "(lecture seule — aucune modification possible sur ce clone)"
+echo "(read-only — no modifications possible on this clone)"
 ```
 
-## Initialiser un nouveau projet
+## Initialize a new project
 
 ```bash
-/project init <nom> <owner/repo>
+/project init <name> <owner/repo>
 ```
 
-Crée la structure dans `PROJECT_DATA` :
+Creates the structure in `PROJECT_DATA`:
 
 ```
-/projects/<nom>/
-├── context.yaml      # métadonnées du projet
-├── architecture.md   # architecture (optionnel)
+/projects/<name>/
+├── context.yaml      # project metadata
+├── architecture.md   # architecture (optional)
 ├── rules.yaml        # pipeline RBAC
-├── design.md         # charte graphique (optionnel)
+├── design.md         # design guidelines (optional)
 ├── sessions/         # handoffs
-└── memory.db         # mémoire sémantique
+└── memory.db         # semantic memory
 ```
 
 ```bash
@@ -163,10 +163,10 @@ pipeline:
   require_all: true
 specialists:
   marketing:
-    triggers: [seo, landing, vitrine, copy]
+    triggers: [seo, landing, showcase, copy]
   design:
-    triggers: [ui, ux, charte, branding]
+    triggers: [ui, ux, guidelines, branding]
 YAML
 
-echo "✅ Projet '$PROJECT_NAME' initialisé"
+echo "✅ Project '$PROJECT_NAME' initialized"
 ```

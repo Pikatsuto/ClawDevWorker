@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ClawDevWorker is an autonomous multi-agent development stack that combines ephemeral Code Server sessions, Ollama LLM inference, and 12 specialist agents to automate code review, development, and QA workflows. Agents receive issues from Forgejo/GitHub, analyze them, code solutions, run pipeline gates, and open PRs without human intervention. Humans interact via chat and ephemeral Code Server sessions.
 
-Primary language for documentation and prompts is **French**. Code is **Node.js/JavaScript**.
+Code is **Node.js/JavaScript**.
 
 ## Build & Deploy
 

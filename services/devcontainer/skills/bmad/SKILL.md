@@ -1,83 +1,83 @@
 ---
 name: bmad
-description: "BMAD Method (Breakthrough Method of Agile AI Driven Development). Orchestre la génération complète de spec projet : brief produit → PRD → architecture → epics et user stories avec dépendances. Utilisé par /spec init pour initialiser un projet avant de créer les issues Forgejo. Deux modes : interactif (dialogue avec le user) ou batch (depuis un brief.md existant)."
+description: "BMAD Method (Breakthrough Method of Agile AI Driven Development). Orchestrates the complete project spec generation: product brief -> PRD -> architecture -> epics and user stories with dependencies. Used by /spec init to initialize a project before creating Forgejo issues. Two modes: interactive (dialogue with the user) or batch (from an existing brief.md)."
 metadata: {"openclaw":{"emoji":"📋"}}
 user-invocable: true
 always: false
 ---
 
-# BMAD Method — Spec projet structurée
+# BMAD Method — Structured Project Spec
 
-## Commandes disponibles
+## Available commands
 
-| Commande | Action |
-|----------|--------|
-| `/bmad brief` | Démarre le brief produit interactif |
-| `/bmad prd` | Génère le PRD depuis le brief |
-| `/bmad arch` | Génère l'architecture technique |
-| `/bmad stories` | Génère les epics et user stories avec dépendances |
-| `/bmad full` | Enchaîne les 4 phases en mode interactif |
-| `/bmad batch <brief.md>` | Mode batch depuis un fichier brief existant |
-| `/bmad status` | État du workflow en cours |
+| Command | Action |
+|---------|--------|
+| `/bmad brief` | Start the interactive product brief |
+| `/bmad prd` | Generate the PRD from the brief |
+| `/bmad arch` | Generate the technical architecture |
+| `/bmad stories` | Generate epics and user stories with dependencies |
+| `/bmad full` | Chain all 4 phases in interactive mode |
+| `/bmad batch <brief.md>` | Batch mode from an existing brief file |
+| `/bmad status` | State of the current workflow |
 
-## Utilisation dans /spec init
+## Usage in /spec init
 
-`/spec init` appelle BMAD automatiquement. Tu n'as pas besoin d'appeler `/bmad` manuellement sauf pour travailler la spec sans créer de projet.
+`/spec init` calls BMAD automatically. You don't need to call `/bmad` manually unless you want to work on the spec without creating a project.
 
-## Format USER_STORIES.md attendu par create-issues.js
+## USER_STORIES.md format expected by create-issues.js
 
-Chaque story DOIT suivre ce format pour que les issues et le DAG soient générés correctement :
+Each story MUST follow this format so that issues and the DAG are generated correctly:
 
 ```markdown
-## US-001 — Titre de la story
+## US-001 — Story title
 
-**En tant que** [persona]
-**Je veux** [action]
-**Afin de** [bénéfice]
+**As a** [persona]
+**I want** [action]
+**So that** [benefit]
 
-**Dépend de :** US-002, US-003
-*(omettre cette ligne si pas de dépendances)*
+**Depends on:** US-002, US-003
+*(omit this line if no dependencies)*
 
-### Critères d'acceptance
+### Acceptance criteria
 
-- [ ] critère 1
-- [ ] critère 2
-- [ ] critère 3
+- [ ] criterion 1
+- [ ] criterion 2
+- [ ] criterion 3
 ```
 
-## Procédure mode interactif (/bmad full)
+## Interactive mode procedure (/bmad full)
 
-Charge le workflow depuis `/opt/skills/bmad/workflows/` et guide le user phase par phase.
+Load the workflow from `/opt/skills/bmad/workflows/` and guide the user phase by phase.
 
 ```bash
 WORKFLOWS_DIR="/opt/skills/bmad/workflows"
 OUTPUT_DIR="${PROJECT_DIR:-/workspace}/_bmad-output"
 mkdir -p "$OUTPUT_DIR/planning-artifacts"
 
-# Phase 1 : Brief produit
+# Phase 1: Product brief
 cat "$WORKFLOWS_DIR/product-brief.md"
-# → dialogue interactif avec le user
-# → génère : $OUTPUT_DIR/planning-artifacts/product-brief.md
+# -> interactive dialogue with the user
+# -> generates: $OUTPUT_DIR/planning-artifacts/product-brief.md
 
-# Phase 2 : PRD
+# Phase 2: PRD
 cat "$WORKFLOWS_DIR/create-prd.md"
-# → génère : $OUTPUT_DIR/planning-artifacts/PRD.md
+# -> generates: $OUTPUT_DIR/planning-artifacts/PRD.md
 
-# Phase 3 : Architecture
+# Phase 3: Architecture
 cat "$WORKFLOWS_DIR/create-architecture.md"
-# → génère : $OUTPUT_DIR/planning-artifacts/ARCHITECTURE.md
+# -> generates: $OUTPUT_DIR/planning-artifacts/ARCHITECTURE.md
 
-# Phase 4 : Stories
+# Phase 4: Stories
 cat "$WORKFLOWS_DIR/create-epics-and-stories.md"
-# → génère : $OUTPUT_DIR/planning-artifacts/USER_STORIES.md
-#   IMPORTANT : inclure les dépendances "**Dépend de :** US-NNN"
+# -> generates: $OUTPUT_DIR/planning-artifacts/USER_STORIES.md
+#   IMPORTANT: include dependencies "**Depends on:** US-NNN"
 ```
 
-## Procédure mode batch (/bmad batch <brief.md>)
+## Batch mode procedure (/bmad batch <brief.md>)
 
 ```bash
 BRIEF_FILE="$1"
-# Lire le brief et générer PRD + ARCHITECTURE + USER_STORIES en une passe
-# en mode autonome sans interaction utilisateur
-# Utiliser le modèle complexe pour la qualité de la génération
+# Read the brief and generate PRD + ARCHITECTURE + USER_STORIES in one pass
+# in autonomous mode without user interaction
+# Use the complex model for generation quality
 ```

@@ -1,76 +1,76 @@
 ---
 name: staged-diff
-description: "Gère les modifications en mode staged : l'agent écrit dans un dossier éphémère, propose le diff, attend /accept ou /reject avant de committer. Utilise ce skill pour TOUTES les modifications de fichiers en session interactive (chat et VSCode). En mode worker headless, le staged-diff est désactivé — les commits sont directs."
+description: "Manages modifications in staged mode: the agent writes to an ephemeral folder, proposes the diff, waits for /accept or /reject before committing. Use this skill for ALL file modifications in interactive sessions (chat and VSCode). In headless worker mode, staged-diff is disabled — commits are direct."
 metadata: {"openclaw":{"emoji":"📋","requires":{"bins":["git","diff"]}}}
 user-invocable: true
 ---
 
-# staged-diff — Review avant commit
+# staged-diff — Review before commit
 
-## Principe
+## Principle
 
-En session interactive (chat ou VSCode), l'agent **ne commit jamais directement**.
-Il écrit les changements dans `${STAGED_DIR}`, affiche le diff, et attend ta validation.
+In interactive sessions (chat or VSCode), the agent **never commits directly**.
+It writes changes to `${STAGED_DIR}`, displays the diff, and waits for your validation.
 
-## Cycle de travail
+## Workflow
 
-### 1. L'agent écrit dans le dossier staged
+### 1. The agent writes to the staged folder
 
 ```bash
 STAGED_DIR="${OPENCLAW_DIR:-$HOME/.openclaw}/staged"
 mkdir -p "$STAGED_DIR"
-# L'agent copie les fichiers modifiés ici
-# ex: $STAGED_DIR/src/auth/login.ts
+# The agent copies modified files here
+# e.g.: $STAGED_DIR/src/auth/login.ts
 ```
 
-### 2. Afficher le diff
+### 2. Display the diff
 
 ```bash
-# Diff complet
+# Full diff
 diff -r --unified=3 "$WORKSPACE" "$STAGED_DIR" \
   --exclude='.git' --exclude='node_modules' \
   2>/dev/null | head -c 20000 || true
 ```
 
-Ou fichier par fichier :
+Or file by file:
 ```bash
 diff --unified=3 "$WORKSPACE/$FILE" "$STAGED_DIR/$FILE" 2>/dev/null || true
 ```
 
-### 3. Commandes disponibles
+### 3. Available commands
 
-| Commande | Action |
-|----------|--------|
-| `/diff` | Affiche le diff complet de tous les fichiers staged |
-| `/diff src/auth/login.ts` | Diff d'un fichier spécifique |
-| `/accept` | Accepte et committe tous les changements staged |
-| `/accept src/auth/login.ts` | Accepte et committe un fichier |
-| `/reject` | Rejette tous les changements, vide staged |
-| `/reject src/auth/login.ts` | Rejette un fichier spécifique |
-| `/staged` | Liste les fichiers en attente |
+| Command | Action |
+|---------|--------|
+| `/diff` | Displays the full diff of all staged files |
+| `/diff src/auth/login.ts` | Diff of a specific file |
+| `/accept` | Accepts and commits all staged changes |
+| `/accept src/auth/login.ts` | Accepts and commits a single file |
+| `/reject` | Rejects all changes, empties staged |
+| `/reject src/auth/login.ts` | Rejects a specific file |
+| `/staged` | Lists pending files |
 
-### 4. /accept — commit atomique
+### 4. /accept — atomic commit
 
 ```bash
-FILE="$1"  # vide = tous les fichiers
+FILE="$1"  # empty = all files
 
 if [ -z "$FILE" ]; then
-  # Tous les fichiers staged
+  # All staged files
   for f in $(find "$STAGED_DIR" -type f | sed "s|$STAGED_DIR/||"); do
     cp "$STAGED_DIR/$f" "$WORKSPACE/$f"
     git -C "$WORKSPACE" add "$f"
   done
-  # Commit avec message conventionnel
-  git -C "$WORKSPACE" commit -m "${COMMIT_TYPE:-feat}: ${COMMIT_MSG:-changements acceptés}"
+  # Commit with conventional message
+  git -C "$WORKSPACE" commit -m "${COMMIT_TYPE:-feat}: ${COMMIT_MSG:-accepted changes}"
   rm -rf "$STAGED_DIR"/*
-  echo "✅ Tous les changements commités"
+  echo "✅ All changes committed"
 else
-  # Fichier spécifique
+  # Specific file
   cp "$STAGED_DIR/$FILE" "$WORKSPACE/$FILE"
   git -C "$WORKSPACE" add "$FILE"
-  git -C "$WORKSPACE" commit -m "${COMMIT_TYPE:-feat}($FILE): ${COMMIT_MSG:-changement accepté}"
+  git -C "$WORKSPACE" commit -m "${COMMIT_TYPE:-feat}($FILE): ${COMMIT_MSG:-accepted change}"
   rm -f "$STAGED_DIR/$FILE"
-  echo "✅ $FILE commité"
+  echo "✅ $FILE committed"
 fi
 ```
 
@@ -80,28 +80,28 @@ fi
 FILE="$1"
 if [ -z "$FILE" ]; then
   rm -rf "$STAGED_DIR"/*
-  echo "🗑️ Tous les changements rejetés"
+  echo "🗑️ All changes rejected"
 else
   rm -f "$STAGED_DIR/$FILE"
-  echo "🗑️ $FILE rejeté"
+  echo "🗑️ $FILE rejected"
 fi
 ```
 
-## Variables d'env pour les commits
+## Environment variables for commits
 
-Avant de proposer un diff, l'agent doit définir :
+Before proposing a diff, the agent must define:
 ```bash
 export COMMIT_TYPE="feat"   # feat | fix | refactor | test | docs | chore
-export COMMIT_MSG="description courte du changement"
+export COMMIT_MSG="short description of the change"
 ```
 
-## Désactivé en mode headless
+## Disabled in headless mode
 
-Si `STAGED_MODE=false` (workers Forgejo), les commits sont directs.
-Le skill vérifie :
+If `STAGED_MODE=false` (Forgejo workers), commits are direct.
+The skill checks:
 ```bash
 if [ "${STAGED_MODE:-true}" = "false" ]; then
-  echo "Mode headless — commit direct"
-  # commit immédiat sans staging
+  echo "Headless mode — direct commit"
+  # immediate commit without staging
 fi
 ```

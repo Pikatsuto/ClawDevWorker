@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY services/mcp-docs/package.json .
-# Pas de dépendances externes — stdlib Node.js uniquement
+# No external dependencies — Node.js stdlib only
 RUN npm install --omit=dev 2>/dev/null || true
 
 COPY services/mcp-docs/src/ src/

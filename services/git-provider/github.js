@@ -2,8 +2,8 @@
 /**
  * git-provider/github.js — Provider GitHub App
  *
- * Authentification via GitHub App (JWT + installation token).
- * Supporte les webhooks GitHub.
+ * Authentication via GitHub App (JWT + installation token).
+ * Supports GitHub webhooks.
  */
 'use strict';
 
@@ -17,8 +17,8 @@ class GithubProvider {
     this.appId          = appId;
     this.webhookSecret  = webhookSecret;
     this.installationId = installationId;
-    // Priorité : variable base64 (atomique, pas de bind mount)
-    // Fallback : chemin fichier (développement local uniquement)
+    // Priority: base64 variable (atomic, no bind mount)
+    // Fallback: file path (local development only)
     if (privateKeyB64) {
       this._privateKey = Buffer.from(privateKeyB64, 'base64').toString('utf8');
     } else if (privateKeyPath && fs.existsSync(privateKeyPath)) {
@@ -30,14 +30,14 @@ class GithubProvider {
     this._installExpiry = 0;
 
     if (!this._privateKey) {
-      console.warn('[git-provider/github] Clé privée non trouvée — GitHub App désactivée');
+      console.warn('[git-provider/github] Private key not found — GitHub App disabled');
     }
   }
 
   // ── JWT GitHub App ──────────────────────────────────────────────────────────
 
   _makeJwt() {
-    if (!this._privateKey) throw new Error('Clé privée GitHub App manquante');
+    if (!this._privateKey) throw new Error('GitHub App private key missing');
     const now = Math.floor(Date.now() / 1000);
     const header  = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify({
@@ -67,7 +67,7 @@ class GithubProvider {
     return this._installToken;
   }
 
-  // ── Signature webhook ───────────────────────────────────────────────────────
+  // ── Webhook signature ──────────────────────────────────────────────────────
 
   verifyWebhook(body, signature) {
     if (!this.webhookSecret) return true;
@@ -78,7 +78,7 @@ class GithubProvider {
     return expected === signature;
   }
 
-  // ── Parsing webhook ─────────────────────────────────────────────────────────
+  // ── Webhook parsing ─────────────────────────────────────────────────────────
 
   parseWebhook(headers, body) {
     const event = headers['x-github-event'];
@@ -125,7 +125,7 @@ class GithubProvider {
     return { type: `unknown.${event}`, repo };
   }
 
-  // ── API REST ────────────────────────────────────────────────────────────────
+  // ── REST API ────────────────────────────────────────────────────────────────
 
   async _req(method, path, body = null, authToken = null) {
     const token   = authToken || await this._getInstallToken();
@@ -161,7 +161,7 @@ class GithubProvider {
     });
   }
 
-  // ── Interface unifiée (identique à Forgejo) ─────────────────────────────────
+  // ── Unified interface (identical to Forgejo) ────────────────────────────────
 
   async getIssue(repo, issueId) {
     const [owner, name] = repo.split('/');
@@ -195,7 +195,7 @@ class GithubProvider {
     const [owner, name] = repo.split('/');
     const r = await this._req('GET', `/repos/${owner}/${name}/pulls/${prId}`,
       null).then(() =>
-      // GitHub retourne le diff via Accept header spécifique
+      // GitHub returns the diff via specific Accept header
       new Promise((resolve, reject) => {
         const opts = {
           method: 'GET', hostname: 'api.github.com', port: 443,
@@ -267,7 +267,7 @@ class GithubProvider {
   }
 
   cloneUrl(repo) {
-    // GitHub App clone via token d'installation
+    // GitHub App clone via installation token
     return `https://x-access-token:${this._installToken}@github.com/${repo}.git`;
   }
 }

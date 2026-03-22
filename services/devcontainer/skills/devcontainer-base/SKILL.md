@@ -1,33 +1,33 @@
 ---
 name: devcontainer
-description: "Gère les sessions de développement éphémères Code Server. Utilise /dev create pour démarrer une session VSCode dans le navigateur, /dev release pour la fermer, /dev status pour voir l'état. Le container est éphémère (--rm) mais le profil VSCode, les extensions et la config OpenClaw persistent dans des volumes par user entre les sessions."
+description: "Manages ephemeral Code Server development sessions. Use /dev create to start a VSCode session in the browser, /dev release to close it, /dev status to see the state. The container is ephemeral (--rm) but the VSCode profile, extensions, and OpenClaw config persist in per-user volumes between sessions."
 metadata: {"openclaw":{"emoji":"🖥️"}}
 user-invocable: true
 ---
 
-# devcontainer — Sessions dev éphémères Code Server
+# devcontainer — Ephemeral Code Server Dev Sessions
 
-## Principe
+## Principle
 
-Chaque session est un container Docker éphémère avec Code Server + OpenClaw.
-Éphémère = destroyed à `/dev release` ou après 30min d'inactivité.
-Persistant = profil VSCode, extensions, config OpenClaw (volumes par user).
+Each session is an ephemeral Docker container with Code Server + OpenClaw.
+Ephemeral = destroyed on `/dev release` or after 30min of inactivity.
+Persistent = VSCode profile, extensions, OpenClaw config (per-user volumes).
 
-## Commandes
+## Commands
 
-| Commande | Action |
-|----------|--------|
-| `/dev create` | Démarre une session dev (workspace vide) |
-| `/dev create owner/repo` | Démarre avec un repo Forgejo cloné |
-| `/dev create owner/repo --password monpass` | Avec mot de passe |
-| `/dev release` | Ferme la session (auto-commit des changements) |
-| `/dev status` | Sessions actives et URL |
-| `/dev queue` | Position dans la queue si VRAM occupée |
+| Command | Action |
+|---------|--------|
+| `/dev create` | Start a dev session (empty workspace) |
+| `/dev create owner/repo` | Start with a cloned Forgejo repo |
+| `/dev create owner/repo --password mypass` | With password |
+| `/dev release` | Close the session (auto-commit changes) |
+| `/dev status` | Active sessions and URL |
+| `/dev queue` | Position in the queue if VRAM is busy |
 
-## Procédure /dev create
+## /dev create Procedure
 
 ```bash
-# L'agent appelle l'orchestrateur
+# The agent calls the orchestrator
 curl -sf -X POST http://localhost:9001/dev/create \
   -H "Content-Type: application/json" \
   -d '{
@@ -37,37 +37,37 @@ curl -sf -X POST http://localhost:9001/dev/create \
   }'
 ```
 
-L'orchestrateur :
-1. Vérifie qu'il n'y a pas de session active pour cet user
-2. Vérifie la disponibilité VRAM
-3. Spawn le container avec labels Traefik pour l'URL éphémère
-4. Signale au scheduler : HUMAN_SHARED (agents continuent si VRAM dispo)
-5. Retourne l'URL : `https://dev-abc123.exemple.com`
+The orchestrator:
+1. Checks that there is no active session for this user
+2. Checks VRAM availability
+3. Spawns the container with Traefik labels for the ephemeral URL
+4. Signals the scheduler: HUMAN_SHARED (agents continue if VRAM is available)
+5. Returns the URL: `https://dev-abc123.example.com`
 
-## Ce qui est éphémère vs persistant
+## What is ephemeral vs persistent
 
 ```
-ÉPHÉMÈRE (container --rm) :
-  - Tous les paquets système installés dans la session
+EPHEMERAL (container --rm):
+  - All system packages installed during the session
   - node_modules, pip packages, build artifacts
-  - Fichiers hors /workspace et hors volumes
+  - Files outside /workspace and outside volumes
 
-PERSISTANT (volumes Docker par user) :
-  - ~/.config/Code/User/          ← settings, keybindings
-  - ~/.local/share/code-server/   ← extensions installées
-  - ~/.openclaw/                  ← config gateway, mémoire
+PERSISTENT (per-user Docker volumes):
+  - ~/.config/Code/User/          <- settings, keybindings
+  - ~/.local/share/code-server/   <- installed extensions
+  - ~/.openclaw/                  <- gateway config, memory
 
-PERSISTANT (git) :
-  - Le code → committé sur Forgejo
-  - L'environnement → .devcontainer/devcontainer.json dans le repo
+PERSISTENT (git):
+  - Code -> committed on Forgejo
+  - Environment -> .devcontainer/devcontainer.json in the repo
 ```
 
-## Devcontainer.json — modifier l'environnement entre sessions
+## Devcontainer.json — modifying the environment between sessions
 
 ```json
-// .devcontainer/devcontainer.json dans le repo
+// .devcontainer/devcontainer.json in the repo
 {
-  "name": "Mon projet",
+  "name": "My project",
   "postCreateCommand": "npm install && pip install -r requirements.txt",
   "containerEnv": {
     "NODE_ENV": "development",
@@ -77,20 +77,20 @@ PERSISTANT (git) :
 }
 ```
 
-La commande `postCreateCommand` n'est exécutée qu'une fois par version du devcontainer.json.
-Si tu modifies le fichier et commites, elle sera re-exécutée à la prochaine session.
+The `postCreateCommand` is only executed once per version of devcontainer.json.
+If you modify the file and commit, it will be re-executed on the next session.
 
-## Heartbeat — éviter l'idle timeout
+## Heartbeat — avoiding idle timeout
 
-Code Server envoie automatiquement des heartbeats toutes les 5min à l'orchestrateur.
-Si aucune activité depuis 30min → container arrêté, changements auto-commités.
+Code Server automatically sends heartbeats every 5min to the orchestrator.
+If no activity for 30min -> container stopped, changes auto-committed.
 
-## Variables d'environnement
+## Environment Variables
 
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `DEVCONTAINER_IMAGE` | `ghcr.io/pikatsuto/cdw-devcontainer:latest` | Image de base |
-| `DEVCONTAINER_MEMORY` | `4g` | RAM par session |
-| `DEVCONTAINER_CPUS` | `2.0` | CPU par session |
-| `DEV_DOMAIN` | `dev.exemple.com` | Domaine des URLs éphémères |
-| `DEV_IDLE_MS` | `1800000` | Timeout idle (30min) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEVCONTAINER_IMAGE` | `ghcr.io/pikatsuto/cdw-devcontainer:latest` | Base image |
+| `DEVCONTAINER_MEMORY` | `4g` | RAM per session |
+| `DEVCONTAINER_CPUS` | `2.0` | CPU per session |
+| `DEV_DOMAIN` | `dev.example.com` | Domain for ephemeral URLs |
+| `DEV_IDLE_MS` | `1800000` | Idle timeout (30min) |

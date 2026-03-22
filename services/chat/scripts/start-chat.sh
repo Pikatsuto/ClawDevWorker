@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-chat.sh — Assistant OpenClaw interactif (headless, DinD rootless)
+# start-chat.sh — Interactive OpenClaw assistant (headless, DinD rootless)
 #
-# Corrections v2 :
-#   1. Whitelist Squid générée dynamiquement depuis les env vars (comme agent)
-#   2. deleteConfirmation supprimé (clé inexistante) → sécurité via tools.allow
-#   3. HTTPS_PROXY passé explicitement à OpenClaw via env au lancement
+# Fixes v2:
+#   1. Squid whitelist generated dynamically from env vars (like agent)
+#   2. deleteConfirmation removed (non-existent key) → security via tools.allow
+#   3. HTTPS_PROXY explicitly passed to OpenClaw via env at launch
 ###############################################################################
 
 set -euo pipefail
@@ -13,7 +13,7 @@ set -euo pipefail
 OPENCLAW_DIR="$HOME/.openclaw"
 CONFIG_FILE="$OPENCLAW_DIR/openclaw.json"
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18791}"
-OLLAMA_URL="http://localhost:11435"  # stream-proxy local — dispatch via scheduler
+OLLAMA_URL="http://localhost:11435"  # local stream-proxy — dispatches via scheduler
 OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}"
 OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD:-}"
 PROXY_URL="http://host-gateway:3128"
@@ -24,8 +24,8 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 log() { echo "[chat] $(date '+%H:%M:%S') $*"; }
 
-# ── 1. Démarrer dockerd rootless ─────────────────────────────────────────────
-log "Démarrage de dockerd rootless..."
+# ── 1. Start dockerd rootless ─────────────────────────────────────────────
+log "Starting dockerd rootless..."
 export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
@@ -35,33 +35,33 @@ dockerd-rootless.sh --experimental --storage-driver=overlay2 \
     > /tmp/dockerd-rootless.log 2>&1 &
 DOCKERD_PID=$!
 
-log "Attente du socket Docker..."
+log "Waiting for Docker socket..."
 for i in $(seq 1 30); do
     docker info >/dev/null 2>&1 && break
     sleep 1
 done
-docker info >/dev/null 2>&1 || { log "ERREUR: dockerd rootless n'a pas démarré"; exit 1; }
-log "dockerd rootless prêt (PID=$DOCKERD_PID)"
+docker info >/dev/null 2>&1 || { log "ERROR: dockerd rootless failed to start"; exit 1; }
+log "dockerd rootless ready (PID=$DOCKERD_PID)"
 
-# ── 2. Pre-pull des images éphémères ─────────────────────────────────────────
-log "Pre-pull des images éphémères..."
+# ── 2. Pre-pull ephemeral images ──────────────────────────────────────────
+log "Pre-pulling ephemeral images..."
 for img in python:3.12-slim node:22-slim ubuntu:24.04 bash:5; do
     docker image inspect "$img" >/dev/null 2>&1 \
-        && log "  $img — déjà présente" \
-        || { log "  Pull $img..."; docker pull "$img" 2>/dev/null && log "  $img — OK" || log "  $img — échec (ignoré)"; }
+        && log "  $img — already present" \
+        || { log "  Pulling $img..."; docker pull "$img" 2>/dev/null && log "  $img — OK" || log "  $img — failed (ignored)"; }
 done
 
-# ── 3. Whitelist Squid — générée dynamiquement depuis les env vars ────────────
-# Volume partagé squid_chat_whitelist monté dans :
-#   openclaw-chat → /etc/squid/whitelist  (écriture)
-#   chat-squid    → /etc/squid/whitelist  (lecture via squid-chat.conf)
-log "Génération de la whitelist Squid..."
+# ── 3. Squid whitelist — generated dynamically from env vars ──────────────
+# Shared volume squid_chat_whitelist mounted in:
+#   openclaw-chat → /etc/squid/whitelist  (write)
+#   chat-squid    → /etc/squid/whitelist  (read via squid-chat.conf)
+log "Generating Squid whitelist..."
 node << 'NODESCRIPT'
 const fs = require('fs');
 
 const lines = [
-  '# Whitelist chat — générée au démarrage par start-chat.sh',
-  '# Ne pas éditer manuellement.',
+  '# Chat whitelist — generated at startup by start-chat.sh',
+  '# Do not edit manually.',
   '',
   '# Package managers',
   'pypi.org',
@@ -79,51 +79,51 @@ const lines = [
   'raw.githubusercontent.com',
   'objects.githubusercontent.com',
   '',
-  '# Images Docker éphémères',
+  '# Ephemeral Docker images',
   'registry-1.docker.io',
   'auth.docker.io',
   'production.cloudflare.docker.com',
   'index.docker.io',
 ];
 
-// Chemin du volume partagé avec chat-squid
+// Path to shared volume with chat-squid
 const dir  = '/etc/squid/whitelist';
 const file = dir + '/whitelist.conf';
 try {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, lines.join('\n') + '\n');
   const domains = lines.filter(l => l && !l.startsWith('#')).length;
-  console.log('whitelist.conf écrit (' + domains + ' domaines) → ' + file);
+  console.log('whitelist.conf written (' + domains + ' domains) → ' + file);
 } catch (e) {
-  console.error('ERREUR écriture whitelist :', e.message);
+  console.error('ERROR writing whitelist:', e.message);
   process.exit(1);
 }
 NODESCRIPT
 
-# Signal à chat-squid de recharger sa config
+# Signal chat-squid to reload its config
 docker exec chat-squid squid -k reconfigure 2>/dev/null \
-    && log "chat-squid rechargé avec la nouvelle whitelist" \
-    || log "chat-squid non joignable via docker exec — sera actif au prochain démarrage"
+    && log "chat-squid reloaded with new whitelist" \
+    || log "chat-squid unreachable via docker exec — will be active on next startup"
 
-# ── 4. Installer les skills ────────────────────────────────────────────────────
+# ── 4. Install skills ────────────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR/skills"
 
 SKILL_DIR="$OPENCLAW_DIR/skills/docker-exec"
 if [ ! -d "$SKILL_DIR" ]; then
-    log "Installation du skill docker-exec..."
+    log "Installing docker-exec skill..."
     cp -r /opt/skills/docker-exec "$SKILL_DIR"
-    log "Skill docker-exec installé"
+    log "docker-exec skill installed"
 fi
 
-# Skills mis à jour à chaque démarrage
+# Skills updated on every startup
 for skill in cpu-status loop-detect spec-init session-handoff semantic-memory project-context frontend-design staged-diff; do
     if [ -d "/opt/skills/${skill}" ]; then
-        log "Installation/mise à jour skill ${skill}..."
+        log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
     fi
 done
 
-# Variables d'env pour les skills
+# Environment variables for skills
 export SCHEDULER_URL="${SCHEDULER_URL:-http://openclaw-agent:7070}"
 AGENT_GIT_LOGIN="${AGENT_GIT_LOGIN:-agent}"
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://openclaw-agent:9001}"
@@ -132,23 +132,23 @@ export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/projects}"
 export SURFACE="chat"
 export STAGED_MODE="${STAGED_MODE:-true}"
 
-# ── 5. Générer openclaw.json ─────────────────────────────────────────────────
+# ── 5. Generate openclaw.json ─────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR"
 chmod 700 "$OPENCLAW_DIR"
-# Créer les dossiers persistants dès le démarrage
-# → survie garantie entre redémarrages via le volume openclaw_chat_data
-mkdir -p "$OPENCLAW_DIR/workspace/memory"   # logs quotidiens YYYY-MM-DD.md
-mkdir -p "$OPENCLAW_DIR/memory"             # index SQLite par agent
+# Create persistent directories at startup
+# → guaranteed to survive restarts via the openclaw_chat_data volume
+mkdir -p "$OPENCLAW_DIR/workspace/memory"   # daily logs YYYY-MM-DD.md
+mkdir -p "$OPENCLAW_DIR/memory"             # SQLite index per agent
 touch "$OPENCLAW_DIR/.onboarded"
 
-# Générer un token stable (re-utilisé entre redémarrages)
+# Generate a stable token (reused between restarts)
 if [ ! -f "$OPENCLAW_DIR/.gateway_token" ]; then
     node -e "require('fs').writeFileSync('$OPENCLAW_DIR/.gateway_token', require('crypto').randomBytes(32).toString('hex'))"
 fi
 GATEWAY_TOKEN=$(cat "$OPENCLAW_DIR/.gateway_token")
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    log "Génération de openclaw.json..."
+    log "Generating openclaw.json..."
     export CONFIG_FILE GATEWAY_PORT GATEWAY_TOKEN OLLAMA_URL OLLAMA_MODEL PROXY_URL OPENCLAW_GATEWAY_PASSWORD OPENCLAW_DIR
     export EPHEMERAL_MEMORY EPHEMERAL_CPUS EPHEMERAL_TIMEOUT GITHUB_TOKEN
 
@@ -157,7 +157,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const port         = parseInt(process.env.GATEWAY_PORT   || '18791');
-const ollamaUrl    = 'http://localhost:11435';  // stream-proxy local — dispatch intelligent
+const ollamaUrl    = 'http://localhost:11435';  // local stream-proxy — smart dispatch
 const ollamaModel  = process.env.OLLAMA_MODEL            || 'qwen3.5:27b-q3_k_m';
 const gwPassword   = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
 const workspaceDir = process.env.OPENCLAW_DIR + '/workspace';
@@ -168,23 +168,23 @@ const timeout      = process.env.EPHEMERAL_TIMEOUT       || '60';
 const githubToken  = process.env.GITHUB_TOKEN            || '';
 const token        = process.env.GATEWAY_TOKEN;
 
-const systemPrompt = `Tu es un assistant de développement interactif.
+const systemPrompt = `You are an interactive development assistant.
 
-Tu peux :
-- Répondre à des questions techniques et chercher de la doc via mcp-docs
-- Écrire et exécuter du code dans des containers éphémères isolés (docker-exec)
-- Manipuler des fichiers dans ton container
+You can:
+- Answer technical questions and search documentation via mcp-docs
+- Write and execute code in isolated ephemeral containers (docker-exec)
+- Manipulate files in your container
 
-Environnement d'exécution (docker-exec) :
-- Chaque exécution part d'une image propre — rien n'est conservé
-- Réseau : none — aucun accès internet depuis le container éphémère
-- Limites : ${mem} RAM, ${cpus} CPU, ${timeout}s max
-- Images disponibles : python:3.12-slim, node:22-slim, ubuntu:24.04, bash:5
+Execution environment (docker-exec):
+- Each execution starts from a clean image — nothing is preserved
+- Network: none — no internet access from the ephemeral container
+- Limits: ${mem} RAM, ${cpus} CPU, ${timeout}s max
+- Available images: python:3.12-slim, node:22-slim, ubuntu:24.04, bash:5
 
-Limites absolues :
-- Pas d'accès à Forgejo, Coolify, ni aux services de déploiement
-- Pas de modification des fichiers host
-- Demande confirmation avant toute action destructive (suppression de fichiers, etc.)`;
+Absolute limits:
+- No access to Forgejo, Coolify, or deployment services
+- No host file modifications
+- Ask for confirmation before any destructive action (file deletion, etc.)`;
 
 const config = {
   gateway: {
@@ -206,15 +206,15 @@ const config = {
       provider: 'ollama',
       model: ollamaModel,
 
-      // ── Workspace persistant — monté sur le volume openclaw_chat_data ──────
-      // Tout l'état OpenClaw (MEMORY.md, logs quotidiens, SQLite) survit
-      // aux redémarrages du container grâce à ce volume nommé.
+      // ── Persistent workspace — mounted on the openclaw_chat_data volume ──
+      // All OpenClaw state (MEMORY.md, daily logs, SQLite) survives
+      // container restarts thanks to this named volume.
       workspace: workspaceDir,
 
-      // ── Memory flush avant compaction ────────────────────────────────────
-      // Quand le contexte approche la limite de tokens, OpenClaw écrit
-      // les infos durables dans memory/YYYY-MM-DD.md AVANT de compacter.
-      // Garantit que rien d'important n'est perdu lors de la compression.
+      // ── Memory flush before compaction ─────────────────────────────────
+      // When context approaches the token limit, OpenClaw writes
+      // durable info to memory/YYYY-MM-DD.md BEFORE compacting.
+      // Ensures nothing important is lost during compression.
       compaction: {
         memoryFlush: {
           enabled: true,
@@ -224,13 +224,13 @@ const config = {
         },
       },
 
-      // ── Memory search — index SQLite hybride (vecteurs + FTS5) ──────────
-      // Permet de retrouver le contexte de sessions passées par recherche
-      // sémantique + mots-clés. L'index est reconstruit automatiquement
-      // si le modèle d'embedding change.
+      // ── Memory search — hybrid SQLite index (vectors + FTS5) ──────────
+      // Allows retrieving context from past sessions via semantic
+      // + keyword search. Index is automatically rebuilt
+      // if the embedding model changes.
       memorySearch: {
         enabled: true,
-        sync: { watch: true },   // re-indexe automatiquement si les fichiers changent
+        sync: { watch: true },   // auto-reindex if files change
         store: {
           path: `${workspaceDir}/../memory/{agentId}.sqlite`,
         },
@@ -250,7 +250,7 @@ const config = {
     list: [
       {
         id: 'chat',
-        name: 'Assistant Dev',
+        name: 'Dev Assistant',
         systemPrompt,
         provider: 'ollama',
         model: ollamaModel,
@@ -291,11 +291,11 @@ const config = {
 
 fs.mkdirSync(path.dirname(process.env.CONFIG_FILE), { recursive: true, mode: 0o700 });
 fs.writeFileSync(process.env.CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
-console.log('openclaw.json généré');
+console.log('openclaw.json generated');
 NODESCRIPT
 
 else
-    log "Session persistante — mise à jour du token uniquement"
+    log "Persistent session — updating token only"
     node -e "
         const fs  = require('fs');
         const cfg = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
@@ -306,8 +306,8 @@ else
     "
 fi
 
-# ── 6. Démarrer le stream-proxy ──────────────────────────────────────────────
-log "Démarrage du stream-proxy (surface=chat, port=11435)..."
+# ── 6. Start the stream-proxy ────────────────────────────────────────────
+log "Starting stream-proxy (surface=chat, port=11435)..."
 SURFACE="chat" \
 SCHEDULER_URL="${SCHEDULER_URL:-http://openclaw-agent:7070}"
 AGENT_GIT_LOGIN="${AGENT_GIT_LOGIN:-agent}"
@@ -320,11 +320,11 @@ PROXY_PID=$!
 log "Stream-proxy PID: $PROXY_PID (surface=chat)"
 sleep 1
 
-# ── 6b. Démarrer le dev-manager ───────────────────────────────────────────────
-# Gère les sessions Code Server éphémères (/dev create|release|status)
-# Utilise HOST_DOCKER_SOCK=/var/run/host-docker.sock — socket Docker du HOST
-# monté sous un nom différent pour ne PAS écraser le DinD rootless interne
-log "Démarrage du dev-manager (port=9002)..."
+# ── 6b. Start the dev-manager ────────────────────────────────────────────
+# Manages ephemeral Code Server sessions (/dev create|release|status)
+# Uses HOST_DOCKER_SOCK=/var/run/host-docker.sock — HOST Docker socket
+# mounted under a different name to NOT overwrite the internal rootless DinD
+log "Starting dev-manager (port=9002)..."
 HOST_DOCKER_SOCK="${HOST_DOCKER_SOCK:-/var/run/host-docker.sock}" \
 DEVCONTAINER_IMAGE="${DEVCONTAINER_IMAGE:-ghcr.io/pikatsuto/cdw-devcontainer:latest}" \
 DEVCONTAINER_MEMORY="${DEVCONTAINER_MEMORY:-4g}" \
@@ -343,11 +343,11 @@ DEV_MGR_PID=$!
 log "Dev-manager PID: $DEV_MGR_PID"
 sleep 1
 
-# ── 7. Démarrer le gateway OpenClaw ─────────────────────────────────────────
-log "Démarrage du gateway OpenClaw sur :${GATEWAY_PORT}..."
-log "Interface web : http://$(hostname -i 2>/dev/null | awk '{print $1}'):${GATEWAY_PORT}"
+# ── 7. Start the OpenClaw gateway ────────────────────────────────────────
+log "Starting OpenClaw gateway on :${GATEWAY_PORT}..."
+log "Web interface: http://$(hostname -i 2>/dev/null | awk '{print $1}'):${GATEWAY_PORT}"
 
-# CORRECTION 3 : HTTPS_PROXY explicitement dans l'environnement du process openclaw
+# FIX 3: HTTPS_PROXY explicitly in the openclaw process environment
 exec env \
     HTTP_PROXY="$PROXY_URL" \
     HTTPS_PROXY="$PROXY_URL" \

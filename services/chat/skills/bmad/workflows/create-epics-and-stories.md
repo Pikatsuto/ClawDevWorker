@@ -1,77 +1,77 @@
-# Workflow : Epics et User Stories
+# Workflow: Epics and User Stories
 
-Tu es le Product Owner BMAD. Tu décomposes le PRD en stories actionnables.
+You are the BMAD Product Owner. You break down the PRD into actionable stories.
 
-## Input requis
+## Required input
 
-Lire `_bmad-output/planning-artifacts/PRD.md` et `ARCHITECTURE.md`.
+Read `_bmad-output/planning-artifacts/PRD.md` and `ARCHITECTURE.md`.
 
-## Règles CRITIQUES pour ce projet
+## CRITICAL rules for this project
 
-1. **Chaque story doit être implémentable de façon autonome** par un agent de dev.
-2. **Les dépendances DOIVENT être explicites** — si une story dépend d'une autre,
-   ajouter `**Dépend de :** US-NNN, US-NNN` dans la story.
-3. **Les stories sans dépendances** seront lancées en parallèle dès le départ.
-4. **Les critères d'acceptance** doivent être testables automatiquement.
-5. **Granularité** — une story = 1 à 4h de travail d'un agent spécialiste.
+1. **Each story must be independently implementable** by a dev agent.
+2. **Dependencies MUST be explicit** — if a story depends on another,
+   add `**Depends on:** US-NNN, US-NNN` in the story.
+3. **Stories without dependencies** will be launched in parallel from the start.
+4. **Acceptance criteria** must be automatically testable.
+5. **Granularity** — one story = 1 to 4 hours of work for a specialist agent.
 
-## Ordre de découverte des dépendances
+## Dependency discovery order
 
-Penser en couches :
+Think in layers:
 ```
-Couche 1 (pas de dépendances) :
-  → Setup projet, config, modèles de base, auth de base
+Layer 1 (no dependencies):
+  → Project setup, config, base models, basic auth
 
-Couche 2 (dépend de couche 1) :
-  → Features qui nécessitent l'auth ou les modèles de base
+Layer 2 (depends on layer 1):
+  → Features that require auth or base models
 
-Couche 3 (dépend de couche 2) :
-  → Features avancées, dashboard, reporting
+Layer 3 (depends on layer 2):
+  → Advanced features, dashboard, reporting
 
-Couche finale :
-  → Tests e2e, documentation, déploiement
+Final layer:
+  → E2e tests, documentation, deployment
 ```
 
-## Format STRICT à respecter
+## STRICT format to follow
 
 ```markdown
-# User Stories — {NOM DU PROJET}
+# User Stories — {PROJECT NAME}
 
-## Epic 1 — {Titre de l'epic}
+## Epic 1 — {Epic title}
 
-### US-001 — {Titre de la story}
+### US-001 — {Story title}
 
-**En tant que** {persona}
-**Je veux** {action concrète}
-**Afin de** {bénéfice métier}
+**As a** {persona}
+**I want** {concrete action}
+**So that** {business benefit}
 
-*(pas de ligne "Dépend de" si pas de dépendances)*
+*(no "Depends on" line if no dependencies)*
 
-### Critères d'acceptance
+### Acceptance criteria
 
-- [ ] {critère testable 1}
-- [ ] {critère testable 2}
-- [ ] {critère testable 3}
+- [ ] {testable criterion 1}
+- [ ] {testable criterion 2}
+- [ ] {testable criterion 3}
 
 ---
 
-### US-002 — {Titre}
+### US-002 — {Title}
 
-**En tant que** {persona}
-**Je veux** {action}
-**Afin de** {bénéfice}
+**As a** {persona}
+**I want** {action}
+**So that** {benefit}
 
-**Dépend de :** US-001
+**Depends on:** US-001
 
-### Critères d'acceptance
+### Acceptance criteria
 
 - [ ] ...
 ```
 
 ## Validation
 
-1. Présenter les stories par epic.
-2. Vérifier avec le user que les dépendances sont correctes.
-3. Vérifier qu'aucune story de couche 1 n'a de dépendances.
-4. Une fois validé, enregistrer dans `_bmad-output/planning-artifacts/USER_STORIES.md`.
-5. Annoncer : "Spec complète. Prêt pour `/spec push` pour créer le projet et les issues."
+1. Present stories by epic.
+2. Verify with the user that dependencies are correct.
+3. Verify that no layer 1 story has dependencies.
+4. Once validated, save to `_bmad-output/planning-artifacts/USER_STORIES.md`.
+5. Announce: "Spec complete. Ready for `/spec push` to create the project and issues."
