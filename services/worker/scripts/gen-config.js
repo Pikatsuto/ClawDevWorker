@@ -70,6 +70,15 @@ ${issueBody}
 - Main PR: ${parentBranch} → main with "Closes #${issueId}" at end of mission
 - NEVER merge a PR
 - NEVER push to main directly
+
+# Resuming work on existing branches
+
+When asked to continue work on an existing issue or branch:
+1. Check if the branch already exists on the user's repo (features/xxx, feat/xxx, fix/xxx)
+2. If it does, fork it and continue from where the previous agent left off
+3. Read the existing commits and PR comments to understand the context
+4. Create new commits on top of the existing work
+5. PR back to the same branch on the user's repo
 ${!stagedMode ? '' : '\n# Staged mode\nYou are working in staged mode — use the staged-diff skill for all file changes.'}
 `;
 

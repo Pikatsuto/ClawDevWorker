@@ -253,6 +253,14 @@ async function push(ownerRepo) {
     fs.copyFileSync(DC_TEMPLATE, `${cloneDir}/.devcontainer/devcontainer.json`);
   }
 
+  // Copy auto-promote workflow
+  const WORKFLOW_TEMPLATE = '/opt/devcontainer/defaults/workflows/auto-promote.yml';
+  if (fs.existsSync(WORKFLOW_TEMPLATE)) {
+    fs.mkdirSync(`${cloneDir}/.github/workflows`, { recursive: true });
+    fs.copyFileSync(WORKFLOW_TEMPLATE, `${cloneDir}/.github/workflows/auto-promote.yml`);
+    log(`✓ auto-promote workflow copied`);
+  }
+
   // Copy BMAD artifacts
   const srcDir = `${BMAD_OUTPUT_DIR}/planning-artifacts`;
   if (!fs.existsSync(srcDir)) {

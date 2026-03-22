@@ -7,6 +7,28 @@ pipeline:
   max_retries: 3
   retry_upgrade: true
 
+git_flow:
+  # trunk = PR → main | gitflow = PR → develop, tags promote to main
+  strategy: trunk
+  target_branch: main
+  # Agent PRs: bot:features/xxx → user:features/xxx (backup on user repo)
+  # Then auto-promote workflow creates PR: features/xxx → target_branch
+  auto_promote: true
+
+branch_cleanup:
+  # Auto-delete agent branches after PR merge (safe: backed up on user repo)
+  auto_delete_on_merge: true
+  # Branch patterns to auto-delete without asking (glob syntax)
+  auto_delete_patterns:
+    - "agent/*"
+    - "bot/*"
+  # Branch patterns to never delete
+  protected_patterns:
+    - "main"
+    - "develop"
+    - "release/*"
+    - "hotfix/*"
+
 specialists:
   architect:
     triggers: [architecture, adr, migration, refactoring, breaking change]
@@ -15,7 +37,7 @@ specialists:
   backend:
     triggers: [api, endpoint, auth, database, migration, sql, cache]
   devops:
-    triggers: [docker, ci, cd, deploy, nginx, traefik, monitoring]
+    triggers: [docker, ci, cd, deploy, monitoring]
   security:
     triggers: [security, injection, xss, csrf, auth, login, password, token]
   qa:

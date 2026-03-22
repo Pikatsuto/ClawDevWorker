@@ -216,6 +216,28 @@ class ForgejoProvider {
     return `${base}/${owner}/${name}.git`;
   }
 
+  // ── Worker operations (agent token) ─────────────────────────────────────────
+
+  async createBranch(repo, branch, fromRef = 'main') {
+    const [owner, name] = repo.split('/');
+    return this._req('POST', `/repos/${owner}/${name}/branches`, {
+      new_branch_name: branch,
+      old_branch_name: fromRef,
+    });
+  }
+
+  async forkRepo(repo) {
+    const [owner, name] = repo.split('/');
+    const r = await this._req('POST', `/repos/${owner}/${name}/forks`, {});
+    return r.data;
+  }
+
+  async listBranches(repo) {
+    const [owner, name] = repo.split('/');
+    const r = await this._req('GET', `/repos/${owner}/${name}/branches?limit=50`);
+    return r.data;
+  }
+
   // ── Privileged operations (chat/codeserver only, require human confirmation) ─
 
   async createRepo(name, { private: priv = true, description = '' } = {}) {

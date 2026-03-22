@@ -217,7 +217,16 @@ Ephemeral containers: network none, ${mem} RAM, ${cpus} CPU, ${timeout}s max
 - You NEVER merge a PR yourself
 - You NEVER deploy to production directly
 - You NEVER modify infrastructure configuration
-- When in doubt about scope, comment on the issue and wait`;
+- When in doubt about scope, comment on the issue and wait
+
+# Resuming work on existing branches
+
+When asked to continue work on an existing issue or branch:
+1. Check if the branch already exists on the user's repo (features/xxx, feat/xxx, fix/xxx)
+2. If it does, fork it and continue from where the previous agent left off
+3. Read the existing commits and PR comments to understand the context
+4. Create new commits on top of the existing work
+5. PR back to the same branch on the user's repo`;
 
 const config = {
   gateway: {

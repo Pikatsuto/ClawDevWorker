@@ -271,6 +271,32 @@ class GithubProvider {
     return `https://x-access-token:${this._installToken}@github.com/${repo}.git`;
   }
 
+  // ── Worker operations (agent token) ─────────────────────────────────────────
+
+  async createBranch(repo, branch, fromRef = 'main') {
+    const [owner, name] = repo.split('/');
+    // GitHub requires the SHA, not the branch name
+    const ref = await this._req('GET', `/repos/${owner}/${name}/git/ref/heads/${fromRef}`);
+    const sha = ref.data?.object?.sha;
+    if (!sha) throw new Error(`Branch "${fromRef}" not found on ${repo}`);
+    return this._req('POST', `/repos/${owner}/${name}/git/refs`, {
+      ref: `refs/heads/${branch}`,
+      sha,
+    });
+  }
+
+  async forkRepo(repo) {
+    const [owner, name] = repo.split('/');
+    const r = await this._req('POST', `/repos/${owner}/${name}/forks`, {});
+    return r.data;
+  }
+
+  async listBranches(repo) {
+    const [owner, name] = repo.split('/');
+    const r = await this._req('GET', `/repos/${owner}/${name}/branches?per_page=50`);
+    return r.data;
+  }
+
   // ── Privileged operations (chat/codeserver only, require human confirmation) ─
 
   async createRepo(name, { private: priv = true, description = '' } = {}) {

@@ -69,16 +69,46 @@ ISSUE_BODY=$(echo  "$ISSUE" | jq -r '.body // ""')
 log "Issue: ${ISSUE_TITLE}"
 
 # ── 3. Main branch for the issue ─────────────────────────────────────────
+# Check if a feature branch already exists on the user's repo (resume flow).
+# The user may have merged a previous agent PR into features/xxx, feat/xxx,
+# fix/xxx etc. If found, we continue from that branch instead of creating a
+# new agent/issue-xxx branch.
 BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | \
   sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40 | sed 's/-$//')
-PARENT_BRANCH="agent/issue-${ISSUE_ID}-${BRANCH_SLUG}"
 
-if git ls-remote --heads origin "$PARENT_BRANCH" | grep -q "$PARENT_BRANCH"; then
+EXISTING_BRANCH=""
+for prefix in features feat fix refactor test docs; do
+  CANDIDATE="${prefix}/${ISSUE_ID}-${BRANCH_SLUG}"
+  if git ls-remote --heads origin "$CANDIDATE" | grep -q "$CANDIDATE"; then
+    EXISTING_BRANCH="$CANDIDATE"
+    break
+  fi
+  # Also try prefix/issue-ID pattern (without slug)
+  CANDIDATE="${prefix}/${ISSUE_ID}"
+  if git ls-remote --heads origin "$CANDIDATE" | grep -q "$CANDIDATE"; then
+    EXISTING_BRANCH="$CANDIDATE"
+    break
+  fi
+done
+
+# Fallback: check for the legacy agent/issue-xxx pattern
+if [ -z "$EXISTING_BRANCH" ]; then
+  CANDIDATE="agent/issue-${ISSUE_ID}-${BRANCH_SLUG}"
+  if git ls-remote --heads origin "$CANDIDATE" | grep -q "$CANDIDATE"; then
+    EXISTING_BRANCH="$CANDIDATE"
+  fi
+fi
+
+if [ -n "$EXISTING_BRANCH" ]; then
+  PARENT_BRANCH="$EXISTING_BRANCH"
   git fetch origin "$PARENT_BRANCH"
   git checkout "$PARENT_BRANCH"
+  log "Resuming from existing branch: ${PARENT_BRANCH}"
 else
+  PARENT_BRANCH="agent/issue-${ISSUE_ID}-${BRANCH_SLUG}"
   git checkout -b "$PARENT_BRANCH"
   git push origin "$PARENT_BRANCH" --set-upstream
+  log "Created new branch: ${PARENT_BRANCH}"
 fi
 log "Main branch: ${PARENT_BRANCH}"
 
