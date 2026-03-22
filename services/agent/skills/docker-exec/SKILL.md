@@ -15,7 +15,7 @@ Executes code in an isolated ephemeral Docker container.
 ## Available images (pre-pulled)
 
 - `python:3.12-slim` — Python 3.12
-- `node:22-slim` — Node.js 22
+- `node:24-slim` — Node.js 24
 - `ubuntu:24.04` — Bash, standard GNU tools
 - `bash:5` — Ultra-lightweight Bash
 

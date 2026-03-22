@@ -195,7 +195,7 @@ const DEVDOCS_SLUGS = [
   // Web & standards
   'html', 'css', 'javascript', 'dom', 'http', 'web_extensions',
   // JS runtimes & supersets
-  'node', 'node~18_lts', 'node~20_lts', 'node~22_lts',
+  'node', 'node~20_lts', 'node~22_lts', 'node~24_lts',
   'typescript', 'deno', 'bun',
   // Python
   'python~3.12', 'python~3.11', 'python~3.10',

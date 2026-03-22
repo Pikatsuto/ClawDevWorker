@@ -45,7 +45,7 @@ log "dockerd rootless ready (PID=$DOCKERD_PID)"
 
 # ── 2. Pre-pull ephemeral images ──────────────────────────────────────────
 log "Pre-pulling ephemeral images..."
-for img in python:3.12-slim node:22-slim ubuntu:24.04 bash:5; do
+for img in python:3.12-slim node:24-slim ubuntu:24.04 bash:5; do
     docker image inspect "$img" >/dev/null 2>&1 \
         && log "  $img — already present" \
         || { log "  Pulling $img..."; docker pull "$img" 2>/dev/null && log "  $img — OK" || log "  $img — failed (ignored)"; }
@@ -179,7 +179,7 @@ Execution environment (docker-exec):
 - Each execution starts from a clean image — nothing is preserved
 - Network: none — no internet access from the ephemeral container
 - Limits: ${mem} RAM, ${cpus} CPU, ${timeout}s max
-- Available images: python:3.12-slim, node:22-slim, ubuntu:24.04, bash:5
+- Available images: python:3.12-slim, node:24-slim, ubuntu:24.04, bash:5
 
 Absolute limits:
 - No access to Forgejo, Coolify, or deployment services
