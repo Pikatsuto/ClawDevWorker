@@ -32,11 +32,11 @@ jobs:
       - id: changes
         run: |
           FORCE="${{ inputs.force_all || 'false' }}"
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "FORCE_ALL")
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
 
-          # Workflow changed or force → rebuild everything
+          # Force all only on explicit manual trigger or if git diff fails
           REBUILD_ALL=false
-          if echo "$CHANGED" | grep -q '\.github/workflows/build\.yml' || [ "$FORCE" = "true" ] || echo "$CHANGED" | grep -q "FORCE_ALL"; then
+          if [ "$FORCE" = "true" ] || [ -z "$CHANGED" ]; then
             REBUILD_ALL=true
           fi
 
