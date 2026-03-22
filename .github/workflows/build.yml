@@ -1,0 +1,91 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/pikatsuto
+
+jobs:
+  # Découverte dynamique des services à builder
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.scan.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: scan
+        run: |
+          # Découvrir tous les services avec un Dockerfile
+          services=$(find services -maxdepth 2 -name Dockerfile \
+            | sed 's|/Dockerfile||' \
+            | sed 's|services/||' \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "services=$services" >> $GITHUB_OUTPUT
+          echo "Services détectés : $services"
+
+  build:
+    needs: discover
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.discover.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/cdw-${{ matrix.service }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build & Push — ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  summary:
+    needs: [discover, build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Résumé du build
+        run: |
+          echo "## Build clawdevworker v14" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Statut |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "Services buildés : ${{ needs.discover.outputs.services }}" \
+            | tr ',' '\n' | tr -d '[]"' | while read svc; do
+              [ -z "$svc" ] && continue
+              echo "| cdw-$svc | ✅ |" >> $GITHUB_STEP_SUMMARY
+            done

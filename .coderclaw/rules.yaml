@@ -1,0 +1,27 @@
+# .coderclaw/rules.yaml — Pipeline RBAC du projet
+
+pipeline:
+  gates: [architect, fullstack, security, qa, doc]
+  require_all: true
+  max_retries: 3
+  retry_upgrade: true
+
+specialists:
+  architect:
+    triggers: [architecture, adr, migration, refactoring, breaking change]
+  frontend:
+    triggers: [ui, ux, composant, component, page, vue, react, responsive]
+  backend:
+    triggers: [api, endpoint, auth, database, migration, sql, cache]
+  devops:
+    triggers: [docker, ci, cd, deploy, nginx, traefik, monitoring]
+  security:
+    triggers: [sécurité, security, injection, xss, csrf, auth, login, password, token, secret, vulnérabilité, faille]
+  marketing:
+    triggers: [seo, landing, conversion, copy, meta, og]
+  design:
+    triggers: [charte, branding, couleur, typographie, maquette, accessibilité]
+  product:
+    triggers: [prd, user story, acceptance, roadmap, backlog]
+  bizdev:
+    triggers: [pricing, abonnement, go-to-market, partenariat]

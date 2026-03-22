@@ -1,4 +1,4 @@
-# ClawDevWorker v14
+# ClawDevWorker
 
 Stack autonome de développement multi-agent : Code Server éphémère + Ollama + agents OpenClaw spécialistes sur GPU local.
 
@@ -45,6 +45,7 @@ HUMAN_EXCLUSIVE  → VRAM pleine, agents mis en pause (queue)
 ```
 
 Upgrade/downgrade de modèle :
+
 - **Chat / Code Server** — proposition affichée dans la session, `/upgrade` ou `/downgrade` pour confirmer
 - **Worker autonome** — upgrade/downgrade silencieux selon score de complexité
 
@@ -196,74 +197,77 @@ Ajouter `.devcontainer/devcontainer.json` dans le repo pour personnaliser l'envi
 
 ## Services
 
-| Service | Image | Rôle |
-|---------|-------|------|
-| `ollama` | `ollama/ollama:latest` | GPU (RTX 2080 Ti + GTX 1660) |
-| `ollama-cpu` | `ollama/ollama:latest` | CPU orchestration |
-| `ollama-init` | `cdw-ollama-init:latest` | Téléchargement modèles (éphémère) |
-| `openclaw-agent` | `cdw-agent:latest` | Scheduler + orchestrateur + webhooks |
-| `openclaw-chat` | `cdw-chat:latest` | Interface chat + commandes |
-| `devcontainer` | `cdw-devcontainer:latest` | Sessions Code Server (spawné dynamiquement) |
-| `devdocs` | `freecodecamp/devdocs` | Documentation offline |
-| `searxng` | `cdw-searxng:latest` | Moteur de recherche local |
-| `browserless` | `cdw-browserless:latest` | Browser headless |
-| `mcp-docs` | `cdw-mcp-docs:latest` | MCP server documentation |
-| `cdw-squid` | `cdw-squid:latest` | Proxy sortant agents |
+
+| Service          | Image                     | Rôle                                        |
+| ---------------- | ------------------------- | -------------------------------------------- |
+| `ollama`         | `ollama/ollama:latest`    | GPU (RTX 2080 Ti + GTX 1660)                 |
+| `ollama-cpu`     | `ollama/ollama:latest`    | CPU orchestration                            |
+| `ollama-init`    | `cdw-ollama-init:latest`  | Téléchargement modèles (éphémère)      |
+| `openclaw-agent` | `cdw-agent:latest`        | Scheduler + orchestrateur + webhooks         |
+| `openclaw-chat`  | `cdw-chat:latest`         | Interface chat + commandes                   |
+| `devcontainer`   | `cdw-devcontainer:latest` | Sessions Code Server (spawné dynamiquement) |
+| `devdocs`        | `freecodecamp/devdocs`    | Documentation offline                        |
+| `searxng`        | `cdw-searxng:latest`      | Moteur de recherche local                    |
+| `browserless`    | `cdw-browserless:latest`  | Browser headless                             |
+| `mcp-docs`       | `cdw-mcp-docs:latest`     | MCP server documentation                     |
+| `cdw-squid`      | `cdw-squid:latest`        | Proxy sortant agents                         |
 
 ---
 
 ## Variables d'environnement
 
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `CHAT_DOMAIN` | — | Domaine openclaw-chat |
-| `DEV_DOMAIN` | — | Domaine wildcard sessions dev (`*.DEV_DOMAIN`) |
-| `OPENCLAW_GATEWAY_PASSWORD` | — | Mot de passe chat |
-| `GIT_PROVIDER_1` | `forgejo` | Type provider 1 |
-| `GIT_PROVIDER_1_URL` | — | URL Forgejo |
-| `GIT_PROVIDER_1_TOKEN` | — | Token compte agent |
-| `GIT_PROVIDER_2` | — | `github` si GitHub App activé |
-| `GIT_PROVIDER_2_APP_ID` | — | GitHub App ID |
-| `GIT_PROVIDER_2_PRIVATE_KEY_B64` | — | Clé privée GitHub App (base64) |
-| `AGENT_GIT_LOGIN` | `agent` | Login compte agent git |
-| `MODEL_COMPLEX` | `qwen3.5:27b-q3_k_m` | Score ≥ 70 |
-| `MODEL_STANDARD` | `qwen3.5:9b` | Score 30–70 |
-| `MODEL_LIGHT` | `qwen3.5:4b` | Score 10–30 |
-| `MODEL_TRIVIAL` | `qwen3.5:2b` | Score < 10 |
-| `MODEL_CPU` | `qwen3.5:0.8b` | CPU orchestration |
-| `MODEL_<ROLE>` | — | Override par rôle (ex: `MODEL_MARKETING=mistral:7b`) |
-| `DEVCONTAINER_IMAGE` | `cdw-devcontainer:latest` | Image sessions dev |
-| `DEVCONTAINER_MEMORY` | `4g` | RAM par session |
-| `DEVCONTAINER_CPUS` | `2.0` | CPUs par session |
-| `DEV_IDLE_MS` | `1800000` | Timeout inactivité (30min) |
-| `DEV_NETWORK` | `coolify` | Réseau Docker pour Traefik |
-| `GATE_MAX_RETRIES` | `3` | Retries avant escalade humaine |
-| `LOOP_DETECT_THRESHOLD` | `2` | Hash répété → boucle détectée |
-| `UPGRADE_THRESHOLD` | `30` | Score delta avant proposition upgrade |
-| `DOWNGRADE_STREAK_MAX` | `3` | Messages bas de suite avant downgrade |
+
+| Variable                         | Défaut                   | Description                                          |
+| -------------------------------- | ------------------------- | ---------------------------------------------------- |
+| `CHAT_DOMAIN`                    | —                        | Domaine openclaw-chat                                |
+| `DEV_DOMAIN`                     | —                        | Domaine wildcard sessions dev (`*.DEV_DOMAIN`)       |
+| `OPENCLAW_GATEWAY_PASSWORD`      | —                        | Mot de passe chat                                    |
+| `GIT_PROVIDER_1`                 | `forgejo`                 | Type provider 1                                      |
+| `GIT_PROVIDER_1_URL`             | —                        | URL Forgejo                                          |
+| `GIT_PROVIDER_1_TOKEN`           | —                        | Token compte agent                                   |
+| `GIT_PROVIDER_2`                 | —                        | `github` si GitHub App activé                       |
+| `GIT_PROVIDER_2_APP_ID`          | —                        | GitHub App ID                                        |
+| `GIT_PROVIDER_2_PRIVATE_KEY_B64` | —                        | Clé privée GitHub App (base64)                     |
+| `AGENT_GIT_LOGIN`                | `agent`                   | Login compte agent git                               |
+| `MODEL_COMPLEX`                  | `qwen3.5:27b-q3_k_m`      | Score ≥ 70                                          |
+| `MODEL_STANDARD`                 | `qwen3.5:9b`              | Score 30–70                                         |
+| `MODEL_LIGHT`                    | `qwen3.5:4b`              | Score 10–30                                         |
+| `MODEL_TRIVIAL`                  | `qwen3.5:2b`              | Score < 10                                           |
+| `MODEL_CPU`                      | `qwen3.5:0.8b`            | CPU orchestration                                    |
+| `MODEL_<ROLE>`                   | —                        | Override par rôle (ex:`MODEL_MARKETING=mistral:7b`) |
+| `DEVCONTAINER_IMAGE`             | `cdw-devcontainer:latest` | Image sessions dev                                   |
+| `DEVCONTAINER_MEMORY`            | `4g`                      | RAM par session                                      |
+| `DEVCONTAINER_CPUS`              | `2.0`                     | CPUs par session                                     |
+| `DEV_IDLE_MS`                    | `1800000`                 | Timeout inactivité (30min)                          |
+| `DEV_NETWORK`                    | `coolify`                 | Réseau Docker pour Traefik                          |
+| `GATE_MAX_RETRIES`               | `3`                       | Retries avant escalade humaine                       |
+| `LOOP_DETECT_THRESHOLD`          | `2`                       | Hash répété → boucle détectée                  |
+| `UPGRADE_THRESHOLD`              | `30`                      | Score delta avant proposition upgrade                |
+| `DOWNGRADE_STREAK_MAX`           | `3`                       | Messages bas de suite avant downgrade                |
 
 ---
 
 ## Checklist déploiement
 
-- [ ] DNS wildcard `*.DEV_DOMAIN` → IP serveur
-- [ ] Traefik configuré pour wildcard TLS
-- [ ] `.env` rempli depuis `.env.example`
-- [ ] `docker compose up -d`
-- [ ] `docker compose logs ollama-init` → modèles téléchargés
-- [ ] DevDocs : `docker compose exec devdocs thor docs:download javascript`
-- [ ] Webhook Forgejo → `http://openclaw-agent:9000/webhook`
-- [ ] Branch protection sur `main` (Required approvals: 1)
-- [ ] `.coderclaw/rules.yaml` dans chaque repo cible
+- [ ]  DNS wildcard `*.DEV_DOMAIN` → IP serveur
+- [ ]  Traefik configuré pour wildcard TLS
+- [ ]  `.env` rempli depuis `.env.example`
+- [ ]  `docker compose up -d`
+- [ ]  `docker compose logs ollama-init` → modèles téléchargés
+- [ ]  DevDocs : `docker compose exec devdocs thor docs:download javascript`
+- [ ]  Webhook Forgejo → `http://openclaw-agent:9000/webhook`
+- [ ]  Branch protection sur `main` (Required approvals: 1)
+- [ ]  `.coderclaw/rules.yaml` dans chaque repo cible
 
 ---
 
 ## Compatibilité IDE
 
-| Accès | Condition | Compatible |
-|-------|-----------|------------|
-| Navigateur (Code Server) | toujours | tous navigateurs |
-| VS Code Desktop | `/ssh-key` configurée | Remote-SSH |
-| Cursor | `/ssh-key` configurée | Remote-SSH |
-| Windsurf | `/ssh-key` configurée | Remote-SSH |
-| JetBrains Gateway | `/ssh-key` configurée | SSH natif |
+
+| Accès                   | Condition              | Compatible       |
+| ------------------------ | ---------------------- | ---------------- |
+| Navigateur (Code Server) | toujours               | tous navigateurs |
+| VS Code Desktop          | `/ssh-key` configurée | Remote-SSH       |
+| Cursor                   | `/ssh-key` configurée | Remote-SSH       |
+| Windsurf                 | `/ssh-key` configurée | Remote-SSH       |
+| JetBrains Gateway        | `/ssh-key` configurée | SSH natif        |
