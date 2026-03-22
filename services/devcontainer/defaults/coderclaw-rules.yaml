@@ -15,6 +15,14 @@ git_flow:
   # Then auto-promote workflow creates PR: features/xxx → target_branch
   auto_promote: true
 
+releases:
+  enabled: true
+  # conventional = auto-tag from conventional commits (feat→minor, fix→patch, feat!→major)
+  # manual = no auto-tag, human tags manually
+  strategy: conventional
+  branch: main               # branch to watch for releases
+  prefix: v                  # tag prefix (v1.0.0)
+
 branch_cleanup:
   # Auto-delete agent branches after PR merge (safe: backed up on user repo)
   auto_delete_on_merge: true

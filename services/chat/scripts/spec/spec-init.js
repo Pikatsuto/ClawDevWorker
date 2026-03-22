@@ -253,12 +253,16 @@ async function push(ownerRepo) {
     fs.copyFileSync(DC_TEMPLATE, `${cloneDir}/.devcontainer/devcontainer.json`);
   }
 
-  // Copy auto-promote workflow
-  const WORKFLOW_TEMPLATE = '/opt/devcontainer/defaults/workflows/auto-promote.yml';
-  if (fs.existsSync(WORKFLOW_TEMPLATE)) {
+  // Copy workflows (auto-promote + auto-release)
+  const WORKFLOWS_DIR = '/opt/devcontainer/defaults/workflows';
+  if (fs.existsSync(WORKFLOWS_DIR)) {
     fs.mkdirSync(`${cloneDir}/.github/workflows`, { recursive: true });
-    fs.copyFileSync(WORKFLOW_TEMPLATE, `${cloneDir}/.github/workflows/auto-promote.yml`);
-    log(`✓ auto-promote workflow copied`);
+    for (const wf of fs.readdirSync(WORKFLOWS_DIR)) {
+      if (wf.endsWith('.yml') || wf.endsWith('.yaml')) {
+        fs.copyFileSync(`${WORKFLOWS_DIR}/${wf}`, `${cloneDir}/.github/workflows/${wf}`);
+        log(`✓ ${wf} workflow copied`);
+      }
+    }
   }
 
   // Copy BMAD artifacts
