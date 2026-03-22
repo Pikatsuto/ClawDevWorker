@@ -54,20 +54,31 @@ jobs:
               continue
             fi
 
-            # Parse all COPY source dirs from the Dockerfile (relative to build context)
-            WATCH_DIRS=$(grep -E '^\s*COPY\s' "$dockerfile" \
-              | grep -v '\-\-from=' \
-              | sed -E 's/^\s*COPY\s+//' \
-              | awk '{print $1}' \
-              | sort -u)
-
+            # Check if the Dockerfile itself or any of its COPY sources changed
+            SVC_DIR="services/${svc}"
             NEEDS_BUILD=false
-            for dir in $WATCH_DIRS; do
-              if echo "$CHANGED" | grep -q "^${dir}"; then
-                NEEDS_BUILD=true
-                break
-              fi
-            done
+
+            # Dockerfile or anything in the service dir changed
+            if echo "$CHANGED" | grep -q "^${SVC_DIR}/"; then
+              NEEDS_BUILD=true
+            fi
+
+            # Also check cross-service COPY sources from the Dockerfile
+            if [ "$NEEDS_BUILD" = "false" ]; then
+              COPY_SOURCES=$(grep -E '^\s*COPY\s' "$dockerfile" \
+                | grep -v '\-\-from=' \
+                | sed -E 's/^\s*COPY\s+//' \
+                | awk '{print $1}' \
+                | grep -v "^${SVC_DIR}" \
+                | sort -u)
+
+              for src in $COPY_SOURCES; do
+                if echo "$CHANGED" | grep -q "^${src}"; then
+                  NEEDS_BUILD=true
+                  break
+                fi
+              done
+            fi
 
             if [ "$NEEDS_BUILD" = "true" ]; then
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
