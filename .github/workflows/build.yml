@@ -100,7 +100,7 @@ jobs:
 
       - name: Build summary
         run: |
-          echo "## Build clawdevworker v14" >> $GITHUB_STEP_SUMMARY
+          echo "## Build clawdevworker" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
