@@ -1,0 +1,169 @@
+# SearXNG configuration — mcp-docs
+# Moteurs sélectionnés : uniquement ceux qui tolèrent le scraping sans ban
+# Pas de Google, pas de Bing en direct (risque de ban IP)
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "mcp-docs-search"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  languages:
+    - "en"
+    - "fr"
+  # Pas de ban timeout — on maîtrise la fréquence côté MCP
+  ban_time_on_fail: 0
+  max_ban_time_on_fail: 0
+  suspended_times:
+    SearxEngineAccessDenied: 0
+    SearxEngineCaptcha: 0
+    SearxEngineTooManyRequests: 0
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "mcp-docs-searxng-secret-change-in-prod"
+  base_url: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "GET"
+
+ui:
+  static_use_hash: false
+  default_locale: "en"
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+  cache_url: false
+  default_theme: simple
+  theme_args:
+    simple_style: dark
+
+# Résultats en JSON pour l'API
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 10.0
+  useragent_suffix: ""
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+
+engines:
+  # ── Moteurs autorisés (tolèrent le scraping) ───────────────────────────────
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: brave
+    engine: brave
+    shortcut: brave
+    disabled: false
+
+  - name: qwant
+    engine: qwant
+    shortcut: qw
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+    language: en
+
+  - name: stackoverflow
+    engine: stackexchange
+    shortcut: so
+    api_site: stackoverflow
+    disabled: false
+
+  - name: unix stackexchange
+    engine: stackexchange
+    shortcut: unix
+    api_site: unix
+    disabled: false
+
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+  - name: npm
+    engine: npm
+    shortcut: npm
+    disabled: false
+
+  - name: pypi
+    engine: pypi
+    shortcut: pip
+    disabled: false
+
+  - name: crates.io
+    engine: crates.io
+    shortcut: crates
+    disabled: false
+
+  - name: pkg.go.dev
+    engine: pkg_go_dev
+    shortcut: go
+    disabled: false
+
+  - name: docker hub
+    engine: docker_hub
+    shortcut: dh
+    disabled: false
+
+  - name: arch linux wiki
+    engine: archlinux
+    shortcut: al
+    disabled: false
+
+  - name: gentoo
+    engine: gentoo
+    shortcut: ge
+    disabled: false
+
+  # ── Moteurs DÉSACTIVÉS (risque de ban) ────────────────────────────────────
+
+  - name: google
+    engine: google
+    disabled: true
+
+  - name: bing
+    engine: bing
+    disabled: true
+
+  - name: yahoo
+    engine: yahoo
+    disabled: true
+
+  - name: google news
+    engine: google news
+    disabled: true
+
+  - name: bing news
+    engine: bing news
+    disabled: true
+
+categories_as_tabs:
+  general:
+    - general
+    - web
+  it:
+    - it
+    - programming
+
+enabled_plugins:
+  - Hash_plugin
+  - Self_Informations
+  - Tracker_URL_remover
+  - Ahmia_blacklist

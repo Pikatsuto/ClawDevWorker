@@ -1,0 +1,24 @@
+# .coderclaw/rules.yaml — Pipeline RBAC du projet
+# Généré par /spec init — éditable après coup
+
+pipeline:
+  gates: [architect, fullstack, security, qa, doc]
+  require_all: true
+  max_retries: 3
+  retry_upgrade: true
+
+specialists:
+  architect:
+    triggers: [architecture, adr, migration, refactoring, breaking change]
+  frontend:
+    triggers: [ui, ux, composant, component, page, vue, react, responsive]
+  backend:
+    triggers: [api, endpoint, auth, database, migration, sql, cache]
+  devops:
+    triggers: [docker, ci, cd, deploy, nginx, traefik, monitoring]
+  security:
+    triggers: [sécurité, security, injection, xss, csrf, auth, login, password, token]
+  qa:
+    triggers: [test, spec, e2e, coverage, regression, bug, fix]
+  doc:
+    triggers: [documentation, readme, jsdoc, changelog, guide]

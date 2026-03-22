@@ -1,0 +1,29 @@
+{
+  "name": "ClawDevWorker dev",
+  "image": "ghcr.io/pikatsuto/cdw-devcontainer:latest",
+
+  // Commande exécutée UNE SEULE FOIS au premier démarrage du container
+  // (re-exécutée si devcontainer.json change entre deux sessions)
+  // Exemple Node.js :
+  "postCreateCommand": "npm install",
+
+  // Variables d'env injectées dans le container
+  "containerEnv": {
+    "NODE_ENV": "development"
+  },
+
+  // Extensions VSCode supplémentaires au projet
+  // (s'ajoutent aux extensions de base du volume user)
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {}
+    }
+  },
+
+  // Ports à exposer (en plus du 8888 Code Server)
+  "forwardPorts": [3000, 5173, 8000],
+
+  // Montages supplémentaires
+  "mounts": []
+}

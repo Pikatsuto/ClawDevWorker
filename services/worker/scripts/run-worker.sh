@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+###############################################################################
+# run-worker.sh — Worker éphémère ClawForge v2
+#
+# Lance un agent OpenClaw autonome pour résoudre une issue Forgejo.
+# L'agent itère librement : analyse → code → commits atomiques → PRs.
+# Fan-out possible via le skill agent-fanout si l'issue est décomposable.
+#
+# Variables d'environnement requises :
+#   FORGEJO_TOKEN, FORGEJO_URL, REPO, ISSUE_ID, ROLE
+#   OLLAMA_MODEL, OLLAMA_BASE_URL, OLLAMA_CPU_URL
+#   SLOT_ID, SCHEDULER_URL
+###############################################################################
+
+set -euo pipefail
+
+FORGEJO_TOKEN="${FORGEJO_TOKEN:?FORGEJO_TOKEN requis}"
+FORGEJO_URL="${FORGEJO_URL:?FORGEJO_URL requis}"
+REPO="${REPO:?REPO requis}"
+ISSUE_ID="${ISSUE_ID:?ISSUE_ID requis}"
+ROLE="${ROLE:-fullstack}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3.5:9b}"
+OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://ollama:11434}"
+OLLAMA_CPU_URL="${OLLAMA_CPU_URL:-http://ollama-cpu:11434}"
+SLOT_ID="${SLOT_ID:-}"
+SCHEDULER_URL="${SCHEDULER_URL:-http://localhost:7070}"
+NO_DEGRADE="${NO_DEGRADE:-false}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+
+OWNER="${REPO%%/*}"
+REPO_NAME="${REPO##*/}"
+WORKSPACE="/workspace/${REPO_NAME}"
+OPENCLAW_DIR="/root/.openclaw"
+CONFIG_FILE="${OPENCLAW_DIR}/openclaw.json"
+
+log()  { echo "[worker/${ROLE}/#${ISSUE_ID}] $(date '+%H:%M:%S') $*"; }
+fail() { log "ERREUR: $*"; exit 1; }
+
+cleanup() {
+  if [ -n "$SLOT_ID" ]; then
+    log "Libération slot GPU ${SLOT_ID}..."
+    curl -sf -X POST "${SCHEDULER_URL}/release" \
+      -H "Content-Type: application/json" \
+      -d "{\"slotId\":\"${SLOT_ID}\"}" || true
+  fi
+}
+trap cleanup EXIT
+
+# ── 1. Clone ──────────────────────────────────────────────────────────────────
+log "Clone ${REPO}..."
+mkdir -p /workspace
+AUTH_URL="${FORGEJO_URL}/${REPO}.git"
+AUTH_URL="${AUTH_URL/\/\//\/\/agent:${FORGEJO_TOKEN}@}"
+git clone --depth=50 "$AUTH_URL" "$WORKSPACE" || fail "Echec clone"
+cd "$WORKSPACE"
+git config user.email "agent@clawforge.local"
+git config user.name  "ClawForge Agent"
+
+# ── 2. Récupère l'issue ───────────────────────────────────────────────────────
+log "Issue #${ISSUE_ID}..."
+ISSUE=$(curl -sf \
+  -H "Authorization: token ${FORGEJO_TOKEN}" \
+  -H "Accept: application/json" \
+  "${FORGEJO_URL}/api/v1/repos/${REPO}/issues/${ISSUE_ID}") \
+  || fail "Impossible de récupérer l'issue"
+
+ISSUE_TITLE=$(echo "$ISSUE" | jq -r '.title')
+ISSUE_BODY=$(echo  "$ISSUE" | jq -r '.body // ""')
+log "Issue : ${ISSUE_TITLE}"
+
+# ── 3. Branche principale de l'issue ─────────────────────────────────────────
+BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | \
+  sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40 | sed 's/-$//')
+PARENT_BRANCH="agent/issue-${ISSUE_ID}-${BRANCH_SLUG}"
+
+if git ls-remote --heads origin "$PARENT_BRANCH" | grep -q "$PARENT_BRANCH"; then
+  git fetch origin "$PARENT_BRANCH"
+  git checkout "$PARENT_BRANCH"
+else
+  git checkout -b "$PARENT_BRANCH"
+  git push origin "$PARENT_BRANCH" --set-upstream
+fi
+log "Branche principale : ${PARENT_BRANCH}"
+
+export PARENT_BRANCH ISSUE_TITLE ISSUE_BODY ISSUE_ID REPO FORGEJO_TOKEN FORGEJO_URL
+export OLLAMA_BASE_URL OLLAMA_MODEL OLLAMA_CPU_URL SCHEDULER_URL SLOT_ID GITHUB_TOKEN
+
+# ── 4. Score heuristique + analyse CPU zone grise ────────────────────────────
+HEURISTIC_SCORE=30
+TEXT_LOWER=$(echo "${ISSUE_TITLE} ${ISSUE_BODY}" | tr '[:upper:]' '[:lower:]')
+
+for KW in security auth migration database architecture refactor deploy infrastructure breaking cve; do
+  echo "$TEXT_LOWER" | grep -q "$KW" && HEURISTIC_SCORE=$((HEURISTIC_SCORE + 15)) || true
+done
+for KW in feature api integration async cache algorithm search; do
+  echo "$TEXT_LOWER" | grep -q "$KW" && HEURISTIC_SCORE=$((HEURISTIC_SCORE + 8)) || true
+done
+for KW in bug fix error crash regression test; do
+  echo "$TEXT_LOWER" | grep -q "$KW" && HEURISTIC_SCORE=$((HEURISTIC_SCORE + 4)) || true
+done
+for KW in typo css style rename copy wording doc readme lint; do
+  echo "$TEXT_LOWER" | grep -q "$KW" && HEURISTIC_SCORE=$((HEURISTIC_SCORE - 10)) || true
+done
+[ "${#ISSUE_BODY}" -gt 2000 ] && HEURISTIC_SCORE=$((HEURISTIC_SCORE + 10)) || true
+[ "${#ISSUE_BODY}" -lt 100  ] && HEURISTIC_SCORE=$((HEURISTIC_SCORE - 5))  || true
+[ "$HEURISTIC_SCORE" -gt 100 ] && HEURISTIC_SCORE=100 || true
+[ "$HEURISTIC_SCORE" -lt 0   ] && HEURISTIC_SCORE=0   || true
+log "Score : ${HEURISTIC_SCORE}/100"
+
+STRUCTURED_CONTEXT=""
+CPU_DECOMPOSABLE="false"
+
+if [ "$ROLE" = "dev" ] && \
+   [ "$HEURISTIC_SCORE" -ge 45 ] && [ "$HEURISTIC_SCORE" -le 75 ] && \
+   [ "$NO_DEGRADE" = "false" ]; then
+
+  log "Zone grise — analyse CPU..."
+  ISSUE_BODY_SHORT=$(echo "$ISSUE_BODY" | head -c 500)
+
+  CPU_RESPONSE=$(curl -sf --max-time 30 -X POST "${OLLAMA_CPU_URL}/api/generate" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+      --arg p "Analyse cette issue. Réponds UNIQUEMENT en JSON sans texte autour.
+Issue : \"${ISSUE_TITLE}\"
+Description : \"${ISSUE_BODY_SHORT}\"
+Score : ${HEURISTIC_SCORE}/100
+{\"score\":<0-100>,\"degrade\":<bool>,\"estimatedFiles\":<int>,\"affectedModules\":[\"...\"],\"acceptanceCriteria\":[\"...\"],\"decomposable\":<bool>,\"subtaskHint\":\"...\"}" \
+      '{model:"qwen3.5:0.8b",prompt:$p,stream:false,keep_alive:0,options:{num_gpu:0,num_predict:250,temperature:0}}'
+    )" 2>/dev/null || echo "")
+
+  if [ -n "$CPU_RESPONSE" ]; then
+    CPU_JSON=$(echo "$CPU_RESPONSE" | jq -r '.response // ""' | \
+      sed 's/```json//g;s/```//g' | grep -o '{.*}' | head -1)
+    if echo "$CPU_JSON" | jq -e '.score' > /dev/null 2>&1; then
+      CPU_SCORE=$(echo "$CPU_JSON" | jq -r '.score           // 50')
+      CPU_FILES=$(echo "$CPU_JSON" | jq -r '.estimatedFiles  // 1')
+      CPU_MODS=$( echo "$CPU_JSON" | jq -r '.affectedModules | join(", ") // ""')
+      CPU_CRIT=$( echo "$CPU_JSON" | jq -r '.acceptanceCriteria | join("\n  - ") // ""')
+      CPU_DECOMPOSABLE=$(echo "$CPU_JSON" | jq -r '.decomposable // false')
+      HEURISTIC_SCORE=$CPU_SCORE
+      STRUCTURED_CONTEXT="
+## Analyse structurée
+- Score : ${CPU_SCORE}/100 — Fichiers estimés : ${CPU_FILES}
+- Modules : ${CPU_MODS}
+- Critères :
+  - ${CPU_CRIT}
+- Décomposable en sous-tâches : ${CPU_DECOMPOSABLE}"
+      log "CPU → score=${CPU_SCORE} files=${CPU_FILES} decomposable=${CPU_DECOMPOSABLE}"
+    fi
+  fi
+fi
+
+export STRUCTURED_CONTEXT CPU_DECOMPOSABLE
+
+# ── 5. Contexte BMAD ─────────────────────────────────────────────────────────
+BMAD_CONTEXT=""
+for BMAD_DIR in docs/bmad .bmad bmad; do
+  if [ -d "$WORKSPACE/$BMAD_DIR" ]; then
+    BMAD_CONTEXT=$(find "$WORKSPACE/$BMAD_DIR" -name "*.md" -exec cat {} \; 2>/dev/null | head -c 6000)
+    log "Contexte BMAD : ${BMAD_DIR}/"
+    break
+  fi
+done
+export BMAD_CONTEXT
+
+# ── 6. Générer openclaw.json ──────────────────────────────────────────────────
+mkdir -p "$OPENCLAW_DIR/workspace/memory" "$OPENCLAW_DIR/memory"
+touch "$OPENCLAW_DIR/.onboarded"
+
+if [ ! -f "$OPENCLAW_DIR/.gateway_token" ]; then
+  node -e "require('fs').writeFileSync('${OPENCLAW_DIR}/.gateway_token', require('crypto').randomBytes(32).toString('hex'))"
+fi
+GATEWAY_TOKEN=$(cat "$OPENCLAW_DIR/.gateway_token")
+export GATEWAY_TOKEN CONFIG_FILE OPENCLAW_DIR WORKSPACE
+
+node /opt/worker/gen-config.js || fail "Génération openclaw.json échouée"
+
+# ── 7. Installer les skills ───────────────────────────────────────────────────
+mkdir -p "$OPENCLAW_DIR/skills"
+
+for skill in docker-exec git-flow agent-fanout loop-detect spec-init staged-diff codebase-analyze \
+             session-handoff semantic-memory project-context frontend-design; do
+  [ -d "/opt/skills/${skill}" ] && \
+    cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}" && \
+    log "Skill ${skill} installé"
+done
+
+mkdir -p /opt/agent-fanout
+cp /opt/skills/agent-fanout/scripts/run-subagent.js /opt/agent-fanout/
+cp /opt/skills/agent-fanout/scripts/fanin-wait.js   /opt/agent-fanout/
+
+export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/projects}"
+export PROJECT_NAME="${PROJECT_NAME:-$(echo "$REPO" | tr '/' '_')}"
+export STAGED_MODE="false"   # headless — commits directs sans staged-diff
+export SURFACE="worker"
+export WORKSPACE="${WORKSPACE:-/workspace/$(echo "$REPO" | cut -d/ -f2)}"
+
+# ── 8. Index codebase incrémental ────────────────────────────────────────────
+# Met à jour uniquement les fichiers modifiés depuis le dernier index.
+# Full scan au premier run (index absent), sinon git-diff based.
+if [ -f "/opt/skills/codebase-analyze/incremental-index.js" ] && [ -d "$WORKSPACE" ]; then
+  log "Mise à jour index codebase (incrémental)..."
+  node /opt/skills/codebase-analyze/incremental-index.js 2>/dev/null || \
+    log "Index codebase : avertissement (non bloquant)" WARN
+fi
+
+# ── 9. Démarrer l'agent OpenClaw headless ────────────────────────────────────
+AGENT_ID="worker-${ROLE}"
+log "Agent OpenClaw headless → ${AGENT_ID}"
+
+exec openclaw agent start \
+  --config   "$CONFIG_FILE" \
+  --agent-id "$AGENT_ID"   \
+  --headless                \
+  --exit-on-idle 120        \
+  --workspace "$WORKSPACE"

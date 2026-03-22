@@ -1,0 +1,96 @@
+{
+  // ── Editor ─────────────────────────────────────────────────────────────────
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.minimap.enabled": false,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.inlineSuggest.enabled": true,
+
+  // ── Terminal ────────────────────────────────────────────────────────────────
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.fontSize": 13,
+
+  // ── Git ────────────────────────────────────────────────────────────────────
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": false,
+
+  // ── Files ──────────────────────────────────────────────────────────────────
+  "files.autoSave": "onFocusChange",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+
+  // ── Explorer ───────────────────────────────────────────────────────────────
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+
+  // ── Docker ─────────────────────────────────────────────────────────────────
+  "docker.showStartPage": false,
+
+  // ── Python ─────────────────────────────────────────────────────────────────
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+
+  // ── OpenClaw / ACP ─────────────────────────────────────────────────────────
+  "openclaw.security.readOnly": false,
+  "openclaw.security.writeConfirmation": true,
+  "openclaw.security.deleteConfirmation": true,
+  "openclaw.security.confirmAllActions": false,
+  "openclaw.terminal.enabled": true,
+  "openclaw.terminal.confirmBeforeRun": true,
+  "openclaw.terminal.allowlist": [
+    "git status",
+    "git diff *",
+    "git log *",
+    "git branch *",
+    "git fetch *",
+    "git ls-files *",
+    "git show *",
+    "ls *",
+    "cat *",
+    "head *",
+    "tail *",
+    "find *",
+    "grep *",
+    "echo *",
+    "pwd",
+    "which *",
+    "node --check *",
+    "node --version",
+    "npm list *",
+    "npm run lint *",
+    "npm run test *",
+    "npm run build *",
+    "yarn lint *",
+    "yarn test *",
+    "python3 -m pytest *",
+    "python3 -c *",
+    "go test *",
+    "cargo test *",
+    "cargo check *"
+  ],
+  "openclaw.terminal.denylist": [
+    "rm -rf *",
+    "git push --force *",
+    "git reset --hard *",
+    "sudo *",
+    "chmod -R 777 *",
+    "dd *",
+    "mkfs *",
+    "curl * | bash",
+    "wget * | bash"
+  ],
+
+  // ── ACP Client — token injecté au runtime par start-devcontainer.sh ─────────
+  "acp.agents": [],
+  "acp.defaultAgent": "OpenClaw",
+  "acp.serverUrl": "http://localhost:8080"
+}

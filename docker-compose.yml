@@ -1,0 +1,432 @@
+###############################################################################
+# Stack: Kasm Workspaces + Ollama + openclaw-agent + openclaw-chat
+#
+# Toutes les images sont pré-buildées sur GHCR via GitHub Actions.
+# Aucun build local, aucun bind mount de config.
+# Les configs (Squid, SearXNG) sont embarquées dans leurs images et copiées
+# dans les volumes au premier démarrage par leurs entrypoints.
+#
+# Réseaux externes à vérifier avant démarrage :
+#   docker network ls | grep -E "coolify|forgejo"
+###############################################################################
+
+networks:
+  coolify:
+    external: true
+
+  frontend:
+    driver: bridge
+
+  backend:
+    driver: bridge
+    internal: true
+
+  forgejo-net:
+    external: true
+
+  docs-net:
+    driver: bridge
+
+  mcp-net:
+    driver: bridge
+    internal: true   # agents ↔ mcp-docs/devdocs/searxng/browserless uniquement
+
+  proxy-net:
+    driver: bridge
+    # pas internal : squid doit pouvoir joindre internet pour proxyfier
+
+  proxy-internal-net:
+    driver: bridge
+    internal: true   # openclaw-agent et openclaw-chat ↔ squid uniquement
+
+volumes:
+  ollama_data:
+  ollama_cpu_data:
+  gguf_cache:        # cache HuggingFace pour Qwen3.5-27B-Q3_K_M.gguf (13.5GB)
+  project_data:      # contexte projets partagé entre tous les services (mémoire, handoffs, rules)
+  devdocs_data:
+  searxng_data:
+  squid_etc:
+  squid_whitelist:
+  squid_cache:
+  squid_logs:
+  openclaw_agent_data:
+  openclaw_chat_data:
+
+services:
+
+  # ── Ollama — NVIDIA (RTX 2080 Ti + GTX 1660 = 17 GB VRAM) ──────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - backend
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Ollama CPU — qwen3.5:0.8b uniquement, zéro VRAM GPU ─────────────────
+  # Utilisé par le gpu-scheduler pour l'analyse d'ambiguïté et l'extraction
+  # structurée des issues (zone grise 45-75). Tourne en CPU, séparé d'ollama
+  # pour garantir zéro interférence avec les inférences GPU en cours.
+  # Aussi utilisé comme tampon conversationnel humain quand les GPU sont saturés.
+  ollama-cpu:
+    image: ollama/ollama:latest
+    container_name: ollama-cpu
+    restart: unless-stopped
+    networks:
+      - backend
+    volumes:
+      - ollama_cpu_data:/root/.ollama
+    environment:
+      - OLLAMA_NUM_GPU=0          # Force CPU uniquement
+      - OLLAMA_NUM_PARALLEL=2     # Max 2 requêtes simultanées (analyse + tampon)
+      - OLLAMA_KEEP_ALIVE=5m      # Décharge le modèle après 5min d'inactivité
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Ollama init — pull tous les modèles au premier démarrage ─────────────
+  # Container éphémère (restart: no) qui s'exécute une seule fois.
+  # Attend qu'ollama et ollama-cpu soient healthy, puis :
+  #   - Pull qwen3.5:9b, 4b, 2b depuis le registry Ollama (GPU)
+  #   - Télécharge Qwen3.5-27B-Q3_K_M.gguf depuis HuggingFace et l'importe
+  #   - Pull qwen3.5:0.8b sur ollama-cpu
+  # Les modèles sont persistés dans les volumes ollama_data / ollama_cpu_data.
+  # Au redémarrage du stack, ollama-init retourne 0 immédiatement car les
+  # modèles sont déjà présents (vérification via /api/tags avant pull).
+  ollama-init:
+    image: ghcr.io/pikatsuto/cdw-ollama-init:latest
+    container_name: ollama-init
+    restart: "no"
+    networks:
+      - backend
+    volumes:
+      - ollama_data:/root/.ollama
+      - gguf_cache:/tmp/gguf-cache
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_CPU_URL=http://ollama-cpu:11434
+      - GGUF_CACHE_DIR=/tmp/gguf-cache
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-cpu:
+        condition: service_healthy
+
+  # ── Kasm Workspaces ──────────────────────────────────────────────────────────
+  # Workspace interactif à enregistrer dans l'UI Kasm :
+  # ── devcontainer — NOTE ───────────────────────────────────────────────────────
+  # Les sessions Code Server sont des containers ÉPHÉMÈRES spawné dynamiquement
+  # par l'orchestrateur (POST /dev/create) — pas un service fixe dans ce compose.
+  #
+  # Image : ghcr.io/pikatsuto/cdw-devcontainer:latest (buildée par le CI)
+  # Spawn via : openclaw-agent → docker run --rm --network coolify ...
+  # URL éphémères via labels Traefik dynamiques : dev-<id>.<DEV_DOMAIN>
+  #
+  # Volumes persistants par user (créés automatiquement au premier spawn) :
+  #   dev_user_<userId>_vscode      ← settings VSCode + keybindings
+  #   dev_user_<userId>_extensions  ← extensions installées
+  #   dev_user_<userId>_openclaw    ← config OpenClaw gateway
+  #
+  # Variables à ajouter dans .env :
+  #   DEVCONTAINER_IMAGE, DEVCONTAINER_MEMORY, DEVCONTAINER_CPUS
+  #   DEV_DOMAIN, DEV_IDLE_MS
+
+  # ── DevDocs ──────────────────────────────────────────────────────────────────
+  devdocs:
+    image: ghcr.io/freecodecamp/devdocs:latest
+    container_name: devdocs
+    restart: unless-stopped
+    networks:
+      - docs-net
+      - mcp-net
+    ports:
+      - "127.0.0.1:9292:9292"
+    volumes:
+      - devdocs_data:/devdocs/public/docs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9292"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── SearXNG ──────────────────────────────────────────────────────────────────
+  searxng:
+    image: ghcr.io/pikatsuto/cdw-searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - docs-net
+      - mcp-net
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - searxng_data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Browserless ──────────────────────────────────────────────────────────────
+  browserless:
+    image: ghcr.io/pikatsuto/cdw-browserless:latest
+    container_name: browserless
+    restart: unless-stopped
+    networks:
+      - docs-net
+      - mcp-net
+    ports:
+      - "127.0.0.1:3457:3000"
+    shm_size: '512mb'
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── MCP Docs ─────────────────────────────────────────────────────────────────
+  mcp-docs:
+    image: ghcr.io/pikatsuto/cdw-mcp-docs:latest
+    container_name: mcp-docs
+    restart: unless-stopped
+    networks:
+      - docs-net
+      - mcp-net
+      - backend
+    depends_on:
+      devdocs:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      browserless:
+        condition: service_healthy
+    environment:
+      - DEVDOCS_URL=http://devdocs:9292
+      - SEARXNG_URL=http://searxng:8080
+      - NODRIVER_URL=http://browserless:3000
+      - MAX_RESULTS=5
+      - FETCH_TIMEOUT=8000
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Squid agent ──────────────────────────────────────────────────────────────
+  # Proxy sortant openclaw-agent. Whitelist partagée via squid_agent_whitelist.
+  # Déblocage à chaud :
+  #   docker exec agent-squid sh -c "echo '.domaine.com' >> /etc/squid/whitelist/whitelist.conf && squid -k reconfigure"
+  squid:
+    image: ghcr.io/pikatsuto/cdw-squid:latest
+    container_name: cdw-squid
+    restart: unless-stopped
+    networks:
+      - proxy-net
+      - proxy-internal-net
+    volumes:
+      - squid_etc:/etc/squid
+      - squid_whitelist:/etc/squid/whitelist
+      - squid_cache:/var/spool/squid
+      - squid_logs:/var/log/squid
+    healthcheck:
+      test: ["CMD", "squid", "-k", "check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── openclaw-agent ────────────────────────────────────────────────────────────
+  # Agent de développement autonome, déclenché par webhook Forgejo.
+  # Pas d'UI exposée. Configurer le webhook dans Forgejo :
+  #   Repo → Settings → Webhooks → http://openclaw-agent:9000/webhook
+  openclaw-agent:
+    image: ghcr.io/pikatsuto/cdw-agent:latest
+    container_name: openclaw-agent
+    restart: unless-stopped
+    privileged: true
+    security_opt:
+      - apparmor:unconfined
+    depends_on:
+      ollama:
+        condition: service_healthy
+      squid:
+        condition: service_healthy
+      mcp-docs:
+        condition: service_healthy
+    networks:
+      - coolify
+      - proxy-internal-net  # ↔ squid (proxy) — pas internet direct
+      - backend             # Ollama
+      - mcp-net             # mcp-docs, devdocs, searxng, browserless
+    extra_hosts:
+      - "host-gateway:host-gateway"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}
+      - OLLAMA_CPU_URL=http://ollama-cpu:11434
+      # ── Modèles par niveau de complexité ─────────────────────────────────
+      - MODEL_COMPLEX=${MODEL_COMPLEX:-qwen3.5:27b-q3_k_m}
+      - MODEL_STANDARD=${MODEL_STANDARD:-qwen3.5:9b}
+      - MODEL_LIGHT=${MODEL_LIGHT:-qwen3.5:4b}
+      - MODEL_TRIVIAL=${MODEL_TRIVIAL:-qwen3.5:2b}
+      - MODEL_CPU=${MODEL_CPU:-qwen3.5:0.8b}
+      - VRAM_COMPLEX=${VRAM_COMPLEX:-14}
+      - VRAM_STANDARD=${VRAM_STANDARD:-5}
+      - VRAM_LIGHT=${VRAM_LIGHT:-3}
+      - VRAM_TRIVIAL=${VRAM_TRIVIAL:-2}
+      # ── Git providers ─────────────────────────────────────────────────────
+      - FORGEJO_TOKEN=${FORGEJO_TOKEN}
+      - FORGEJO_HOST_PORT=${FORGEJO_HOST_PORT:-3000}
+      - GIT_PROVIDER_1=${GIT_PROVIDER_1:-forgejo}
+      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://host-gateway:3000}
+      - GIT_PROVIDER_1_TOKEN=${GIT_PROVIDER_1_TOKEN:-${FORGEJO_TOKEN}}
+      - GIT_PROVIDER_1_WEBHOOK_SECRET=${GIT_PROVIDER_1_WEBHOOK_SECRET:-}
+      - GIT_PROVIDER_2=${GIT_PROVIDER_2:-}
+      - GIT_PROVIDER_2_APP_ID=${GIT_PROVIDER_2_APP_ID:-}
+      - GIT_PROVIDER_2_PRIVATE_KEY_B64=${GIT_PROVIDER_2_PRIVATE_KEY_B64:-}
+      - GIT_PROVIDER_2_WEBHOOK_SECRET=${GIT_PROVIDER_2_WEBHOOK_SECRET:-}
+      - GIT_PROVIDER_2_INSTALLATION_ID=${GIT_PROVIDER_2_INSTALLATION_ID:-}
+      # ── Contexte projet ───────────────────────────────────────────────────
+      - PROJECT_DATA_DIR=/projects
+      - COOLIFY_HOST_PORT=${COOLIFY_HOST_PORT:-8000}
+      - COOLIFY_PREVIEW_DOMAIN=${COOLIFY_PREVIEW_DOMAIN:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - WEBHOOK_PORT=9000
+      - HTTP_PROXY=http://cdw-squid:3128
+      - HTTPS_PROXY=http://cdw-squid:3128
+      - NO_PROXY=localhost,127.0.0.1,ollama,devdocs,searxng,browserless,mcp-docs,cdw-squid
+      - EPHEMERAL_MEMORY=${EPHEMERAL_MEMORY:-1g}
+      - EPHEMERAL_CPUS=${EPHEMERAL_CPUS:-1.0}
+      - EPHEMERAL_TIMEOUT=${EPHEMERAL_TIMEOUT:-300}
+      - SCHEDULER_PORT=${SCHEDULER_PORT:-7070}
+      - HUMAN_IDLE_MS=${HUMAN_IDLE_MS:-1800000}
+      - GATE_MAX_RETRIES=${GATE_MAX_RETRIES:-3}
+      - GATE_RETRY_UPGRADE=${GATE_RETRY_UPGRADE:-true}
+      - LOOP_DETECT_THRESHOLD=${LOOP_DETECT_THRESHOLD:-2}
+      - AGENT_GIT_LOGIN=${AGENT_GIT_LOGIN:-agent}
+      - WORKER_IMAGE=ghcr.io/pikatsuto/cdw-worker:latest
+      - ORCHESTRATOR_PORT=${ORCHESTRATOR_PORT:-9001}
+    volumes:
+      - openclaw_agent_data:/home/kasm-user/.openclaw
+      - squid_whitelist:/etc/squid/whitelist
+      - project_data:/projects
+      # GitHub App private key (optionnel)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── openclaw-chat ─────────────────────────────────────────────────────────────
+  openclaw-chat:
+    image: ghcr.io/pikatsuto/cdw-chat:latest
+    container_name: openclaw-chat
+    restart: unless-stopped
+    privileged: true
+    security_opt:
+      - apparmor:unconfined
+    depends_on:
+      ollama:
+        condition: service_healthy
+      squid:
+        condition: service_healthy
+      mcp-docs:
+        condition: service_healthy
+    networks:
+      - coolify
+      - proxy-internal-net  # ↔ squid (proxy) — pas internet direct
+      - backend
+      - mcp-net    # accès MCP uniquement, pas docs-net direct
+    environment:
+      - OPENCLAW_GATEWAY_PORT=18791
+      - OPENCLAW_GATEWAY_BIND=0.0.0.0
+      - OPENCLAW_GATEWAY_PASSWORD=${OPENCLAW_GATEWAY_PASSWORD}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}
+      - OLLAMA_CPU_URL=http://ollama-cpu:11434
+      # ── Modèles par niveau ────────────────────────────────────────────────
+      - MODEL_COMPLEX=${MODEL_COMPLEX:-qwen3.5:27b-q3_k_m}
+      - MODEL_STANDARD=${MODEL_STANDARD:-qwen3.5:9b}
+      - MODEL_LIGHT=${MODEL_LIGHT:-qwen3.5:4b}
+      - MODEL_TRIVIAL=${MODEL_TRIVIAL:-qwen3.5:2b}
+      - MODEL_CPU=${MODEL_CPU:-qwen3.5:0.8b}
+      # ── Git providers (lecture seule pour le chat) ────────────────────────
+      - FORGEJO_TOKEN=${FORGEJO_TOKEN}
+      - AGENT_GIT_LOGIN=${AGENT_GIT_LOGIN:-agent}
+      - ORCHESTRATOR_URL=http://openclaw-agent:9001
+      - GIT_PROVIDER_1=${GIT_PROVIDER_1:-forgejo}
+      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://host-gateway:3000}
+      - GIT_PROVIDER_1_TOKEN=${GIT_PROVIDER_1_TOKEN:-${FORGEJO_TOKEN}}
+      - GIT_PROVIDER_2=${GIT_PROVIDER_2:-}
+      - GIT_PROVIDER_2_APP_ID=${GIT_PROVIDER_2_APP_ID:-}
+      - GIT_PROVIDER_2_PRIVATE_KEY_B64=${GIT_PROVIDER_2_PRIVATE_KEY_B64:-}
+      - GIT_PROVIDER_2_INSTALLATION_ID=${GIT_PROVIDER_2_INSTALLATION_ID:-}
+      # ── Contexte projet ───────────────────────────────────────────────────
+      - PROJECT_DATA_DIR=/projects
+      - HTTPS_PROXY=http://cdw-squid:3128
+      - HTTP_PROXY=http://cdw-squid:3128
+      - NO_PROXY=localhost,127.0.0.1,ollama,devdocs,searxng,browserless,mcp-docs,cdw-squid
+      - EPHEMERAL_MEMORY=${EPHEMERAL_MEMORY:-512m}
+      - EPHEMERAL_CPUS=${EPHEMERAL_CPUS:-0.5}
+      - EPHEMERAL_TIMEOUT=${EPHEMERAL_TIMEOUT:-60}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      # ── Dev Container ─────────────────────────────────────────────────
+      - HOST_DOCKER_SOCK=/var/run/host-docker.sock
+      - DEVCONTAINER_IMAGE=${DEVCONTAINER_IMAGE:-ghcr.io/pikatsuto/cdw-devcontainer:latest}
+      - DEVCONTAINER_MEMORY=${DEVCONTAINER_MEMORY:-4g}
+      - DEVCONTAINER_CPUS=${DEVCONTAINER_CPUS:-2.0}
+      - DEV_DOMAIN=${DEV_DOMAIN}
+      - DEV_NETWORK=${DEV_NETWORK:-coolify}
+      - DEV_IDLE_MS=${DEV_IDLE_MS:-1800000}
+    volumes:
+      - openclaw_chat_data:/home/kasm-user/.openclaw
+      - squid_whitelist:/etc/squid/whitelist
+      - project_data:/projects
+      # Socket Docker host — monté sous /var/run/host-docker.sock
+      # pour ne PAS écraser le DinD rootless interne du container
+      # DOCKER_HOST=unix:///var/run/host-docker.sock utilisé uniquement
+      # pour spawner les containers Code Server éphémères via Traefik
+      - /var/run/docker.sock:/var/run/host-docker.sock:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openclaw-chat.rule=Host(`${CHAT_DOMAIN}`)"
+      - "traefik.http.routers.openclaw-chat.entrypoints=https"
+      - "traefik.http.routers.openclaw-chat.tls=true"
+      - "traefik.http.routers.openclaw-chat.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.openclaw-chat.service=openclaw-chat-svc"
+      - "traefik.http.services.openclaw-chat-svc.loadbalancer.server.port=18791"
+      - "traefik.http.middlewares.openclaw-ws.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.openclaw-chat.middlewares=openclaw-ws"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18791/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
