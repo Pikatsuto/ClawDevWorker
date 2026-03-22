@@ -61,7 +61,7 @@ RUN curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" \
 
 # ── Rust ──────────────────────────────────────────────────────────────────────
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --no-modify-path \
+      | bash -s -- -y --no-modify-path \
  && /root/.cargo/bin/rustup default stable \
  && cp -r /root/.cargo /home/coder/.cargo \
  && cp -r /root/.rustup /home/coder/.rustup \
