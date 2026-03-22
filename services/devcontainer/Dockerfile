@@ -76,9 +76,7 @@ RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_S
 # ── OpenClaw — copied from coollabsio ────────────────────────────────────────
 COPY --from=openclaw-base /usr/local/lib/node_modules/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
-COPY --from=openclaw-base /scripts /opt/openclaw-scripts
-# coollabsio's configure.js — generates openclaw.json from env vars
-COPY --from=openclaw-base /scripts/configure.js /opt/openclaw-scripts/configure.js
+COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts
 
 # ── mcp-docs ──────────────────────────────────────────────────────────────────
 COPY services/mcp-docs/ /opt/mcp-docs/
