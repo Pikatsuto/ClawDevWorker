@@ -21,8 +21,8 @@ const fs   = require('fs');
 const http = require('http');
 const path = require('path');
 
-const FORGEJO_TOKEN  = process.env.FORGEJO_TOKEN  || '';
-const FORGEJO_URL    = process.env.FORGEJO_URL    || '';
+const { loadProviders, getProviderForRepo } = require('/opt/git-provider/index.js');
+
 const REPO           = process.env.REPO           || '';
 const ISSUE_ID       = process.env.ISSUE_ID       || '';
 const PARENT_BRANCH  = process.env.PARENT_BRANCH  || 'main';
@@ -37,6 +37,16 @@ const EPHEMERAL_DIR  = process.env.EPHEMERAL_DIR  || '/tmp/subagent';
 const RESULT_FILE    = process.env.RESULT_FILE    || '/tmp/result.json';
 
 const WORKSPACE = `/workspace/${REPO.split('/')[1] || 'repo'}`;
+
+let gitProviders, provider;
+try {
+  gitProviders = loadProviders();
+  provider = getProviderForRepo(REPO, gitProviders);
+  if (!provider) throw new Error('No provider found for ' + REPO);
+} catch (e) {
+  console.error(`[subagent] Git provider error: ${e.message}`);
+  process.exit(1);
+}
 
 const log = msg => console.log(`[subagent/${SUB_BRANCH}] ${new Date().toISOString()} ${msg}`);
 
@@ -65,28 +75,6 @@ function git(args, opts = {}) {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
   }
   return (result.stdout || '').trim();
-}
-
-function forgejoReq(method, path, body = null) {
-  return new Promise((resolve, reject) => {
-    const url     = new URL(path, FORGEJO_URL);
-    const payload = body ? JSON.stringify(body) : null;
-    const opts    = {
-      method, hostname: url.hostname, port: url.port || 3000, path: url.pathname,
-      headers: {
-        'Authorization': `token ${FORGEJO_TOKEN}`,
-        'Accept': 'application/json',
-        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
-      },
-    };
-    const req = http.request(opts, res => {
-      let d = ''; res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(d); } });
-    });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
 }
 
 function ollamaChat(messages, opts = {}) {
@@ -258,15 +246,15 @@ When everything is committed, type "COMMITS_DONE" and I will create the PR.`
 
     log(`${commitCount} commit(s) on ${SUB_BRANCH} — creating PR...`);
 
-    // Create the PR targeting PARENT_BRANCH
-    const pr = await forgejoReq('POST', `/api/v1/repos/${REPO}/pulls`, {
+    // Create the PR targeting PARENT_BRANCH (works for both Forgejo and GitHub)
+    const prResult = await provider.createPR(REPO, {
       title: `${TASK_TYPE}(${SUB_BRANCH.split('/').pop()}): ${TASK_DESC.slice(0, 60)}`,
       body:  `## Subtask of issue #${ISSUE_ID}\n\n${TASK_DESC}\n\n${summary ? `## Summary\n${summary}` : ''}\n\nPart of #${ISSUE_ID}`,
       head:  SUB_BRANCH,
       base:  PARENT_BRANCH,
     });
 
-    prNumber = pr?.number ?? null;
+    prNumber = prResult?.data?.number ?? null;
     log(`PR #${prNumber} created: ${SUB_BRANCH} → ${PARENT_BRANCH}`);
 
     // ── 6. Write the result ───────────────────────────────────────────────────

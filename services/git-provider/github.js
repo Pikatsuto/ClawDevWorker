@@ -270,6 +270,48 @@ class GithubProvider {
     // GitHub App clone via installation token
     return `https://x-access-token:${this._installToken}@github.com/${repo}.git`;
   }
+
+  // ── Privileged operations (chat/codeserver only, require human confirmation) ─
+
+  async createRepo(name, { private: priv = true, description = '' } = {}) {
+    const r = await this._req('POST', '/user/repos', {
+      name, private: priv, description, auto_init: true, default_branch: 'main',
+    });
+    return r.data;
+  }
+
+  async addCollaborator(repo, username, permission = 'push') {
+    const [owner, name] = repo.split('/');
+    return this._req('PUT', `/repos/${owner}/${name}/collaborators/${username}`, { permission });
+  }
+
+  async createWebhook(repo, { url, secret = '', events = ['push', 'issues', 'pull_request', 'issue_comment'] } = {}) {
+    const [owner, name] = repo.split('/');
+    return this._req('POST', `/repos/${owner}/${name}/hooks`, {
+      name: 'web',
+      active: true,
+      config: { url, content_type: 'json', secret },
+      events,
+    });
+  }
+
+  async protectBranch(repo, branch = 'main', { requiredApprovals = 1 } = {}) {
+    const [owner, name] = repo.split('/');
+    return this._req('PUT', `/repos/${owner}/${name}/branches/${branch}/protection`, {
+      required_pull_request_reviews: {
+        required_approving_review_count: requiredApprovals,
+        dismiss_stale_reviews: true,
+      },
+      enforce_admins: false,
+      restrictions: null,
+      required_status_checks: null,
+    });
+  }
+
+  async deleteBranch(repo, branch) {
+    const [owner, name] = repo.split('/');
+    return this._req('DELETE', `/repos/${owner}/${name}/git/refs/heads/${branch}`);
+  }
 }
 
 module.exports = GithubProvider;

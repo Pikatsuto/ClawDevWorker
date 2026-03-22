@@ -215,6 +215,46 @@ class ForgejoProvider {
     const base = this.baseUrl.replace('://', `://agent:${this.token}@`);
     return `${base}/${owner}/${name}.git`;
   }
+
+  // ── Privileged operations (chat/codeserver only, require human confirmation) ─
+
+  async createRepo(name, { private: priv = true, description = '' } = {}) {
+    const r = await this._req('POST', '/user/repos', {
+      name, private: priv, description, auto_init: true, default_branch: 'main',
+    });
+    return r.data;
+  }
+
+  async addCollaborator(repo, username, permission = 'write') {
+    const [owner, name] = repo.split('/');
+    return this._req('PUT', `/repos/${owner}/${name}/collaborators/${username}`, { permission });
+  }
+
+  async createWebhook(repo, { url, secret = '', events = ['push', 'issues', 'pull_request', 'issue_comment'] } = {}) {
+    const [owner, name] = repo.split('/');
+    return this._req('POST', `/repos/${owner}/${name}/hooks`, {
+      type: 'gitea',
+      active: true,
+      config: { url, content_type: 'json', secret },
+      events,
+    });
+  }
+
+  async protectBranch(repo, branch = 'main', { requiredApprovals = 1 } = {}) {
+    const [owner, name] = repo.split('/');
+    return this._req('POST', `/repos/${owner}/${name}/branch_protections`, {
+      branch_name: branch,
+      enable_push: false,
+      enable_merge_whitelist: true,
+      required_approvals: requiredApprovals,
+      dismiss_stale_approvals: true,
+    });
+  }
+
+  async deleteBranch(repo, branch) {
+    const [owner, name] = repo.split('/');
+    return this._req('DELETE', `/repos/${owner}/${name}/branches/${branch}`);
+  }
 }
 
 module.exports = ForgejoProvider;
