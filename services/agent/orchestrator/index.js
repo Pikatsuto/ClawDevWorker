@@ -149,18 +149,35 @@ async function readRulesYaml(repo) {
     const requireAll = !/require_all:\s*false/.test(content);
     const maxRetries = (content.match(/max_retries:\s*(\d+)/) || [])[1];
     const retryUpgrade = !/retry_upgrade:\s*false/.test(content);
-    // Parse per-specialist model overrides
+    // Parse git_flow target branch
+    const targetMatch = content.match(/target_branch:\s*(\S+)/);
+    const targetBranch = targetMatch ? targetMatch[1].replace(/['"]/g, '') : 'main';
+
+    // Parse per-specialist config (model, fallback, triggers)
     const specialistModels = {};
-    const specSections = content.split(/\n  (\w+):\s*\n/);
-    for (let i = 1; i < specSections.length; i += 2) {
-      const name = specSections[i];
-      const block = specSections[i + 1] || '';
+    const specialistTriggers = {};
+
+    // Split on specialist name headers under "specialists:" section
+    const specSection = content.split(/^specialists:\s*$/m)[1] || '';
+    const specBlocks = specSection.split(/\n  (\w+):\s*\n/);
+    for (let i = 1; i < specBlocks.length; i += 2) {
+      const name = specBlocks[i];
+      const block = specBlocks[i + 1] || '';
+      if (!SPECIALISTS.includes(name)) continue;
+
       const modelMatch = block.match(/model:\s*(\S+)/);
       const fallbackMatch = block.match(/fallback:\s*(\S+)/);
-      if (modelMatch && SPECIALISTS.includes(name)) {
+      if (modelMatch) {
         specialistModels[name] = {
           model: modelMatch[1].replace(/['"]/g, ''),
           fallback: fallbackMatch ? fallbackMatch[1].replace(/['"]/g, '') : null,
+        };
+      }
+
+      const triggersMatch = block.match(/triggers:\s*\[([^\]]+)\]/);
+      if (triggersMatch) {
+        specialistTriggers[name] = {
+          triggers: triggersMatch[1].split(',').map(t => t.trim().replace(/['"]/g, '')),
         };
       }
     }
@@ -170,24 +187,52 @@ async function readRulesYaml(repo) {
       requireAll,
       maxRetries: maxRetries ? parseInt(maxRetries) : MAX_RETRIES,
       retryUpgrade,
+      targetBranch,
       specialistModels,
+      specialistTriggers,
     };
   } catch {
     return null;
   }
 }
 
-// ── CPU analysis for specialist routing ───────────────────────────────────────
+// ── Specialist routing ────────────────────────────────────────────────────────
+//
+// Priority:
+//   1. Git labels (manual override: gate:security on the issue)
+//   2. Trigger matching (issue text vs specialist triggers from rules.yaml)
+//   3. CPU analysis (0.8b model disambiguates when triggers are ambiguous)
+//   4. Ask human (comment on issue if no confidence)
 
-async function cpuAnalyzeIssue(issueTitle, issueBody) {
+function matchTriggers(issueText, specialistTriggers) {
+  const text = issueText.toLowerCase();
+  const scores = {};
+
+  for (const [role, config] of Object.entries(specialistTriggers)) {
+    const triggers = config.triggers || [];
+    let score = 0;
+    for (const trigger of triggers) {
+      if (text.includes(trigger.toLowerCase())) score++;
+    }
+    if (score > 0) scores[role] = score;
+  }
+
+  // Sort by score descending
+  return Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .map(([role]) => role);
+}
+
+async function cpuDisambiguate(issueTitle, issueBody, candidates) {
   return new Promise((resolve) => {
-    const prompt = `You are a task router. Given this issue, determine which specialist gates are needed.
-Available specialists: ${SPECIALISTS.join(', ')}
+    const prompt = `You are a task router. Given this issue and these candidate specialists, pick the ones actually needed.
+
+Candidates: ${candidates.join(', ')}
 
 Issue: "${issueTitle}"
 ${issueBody ? `Description: "${issueBody.slice(0, 500)}"` : ''}
 
-Reply with ONLY a JSON array of specialist names needed, e.g. ["fullstack","qa","doc"]. Most important first.`;
+Reply with ONLY a JSON array from the candidates, e.g. ["fullstack","qa"]. Order by importance.`;
 
     const payload = JSON.stringify({
       model: 'qwen3.5:0.8b', prompt, stream: false, keep_alive: 0,
@@ -206,16 +251,66 @@ Reply with ONLY a JSON array of specialist names needed, e.g. ["fullstack","qa",
           const resp = JSON.parse(d).response || '';
           const match = resp.match(/\[.*\]/);
           if (match) {
-            const arr = JSON.parse(match[0]).filter(r => SPECIALISTS.includes(r));
-            resolve(arr.length ? arr : ['fullstack']);
-          } else resolve(['fullstack']);
-        } catch { resolve(['fullstack']); }
+            const arr = JSON.parse(match[0]).filter(r => candidates.includes(r));
+            resolve(arr.length ? arr : null);
+          } else resolve(null);
+        } catch { resolve(null); }
       });
     });
-    req.on('error', () => resolve(['fullstack']));
-    req.setTimeout(15000, () => { req.destroy(); resolve(['fullstack']); });
+    req.on('error', () => resolve(null));
+    req.setTimeout(15000, () => { req.destroy(); resolve(null); });
     req.write(payload); req.end();
   });
+}
+
+async function routeIssue(repo, issueId, issue, rules) {
+  const issueText = `${issue.title} ${issue.body || ''}`;
+  const labels = issue.labels || [];
+  const pipelineGates = rules?.gates || ['fullstack'];
+
+  // 1. Manual override via labels (gate:xxx)
+  const labelGates = labels
+    .filter(l => l.startsWith('gate:'))
+    .map(l => l.replace('gate:', ''))
+    .filter(r => SPECIALISTS.includes(r));
+
+  if (labelGates.length > 0) {
+    log(`Routing ${repo}#${issueId}: label override → [${labelGates.join(',')}]`);
+    return labelGates;
+  }
+
+  // 2. Trigger matching from rules.yaml specialists
+  const specialistTriggers = rules?.specialistTriggers || {};
+  const triggerMatched = matchTriggers(issueText, specialistTriggers);
+
+  // Filter to only gates in the pipeline
+  const relevantGates = triggerMatched.filter(r => pipelineGates.includes(r));
+
+  if (relevantGates.length > 0) {
+    // If many triggers matched (>3), ask CPU to narrow down
+    if (relevantGates.length > 3) {
+      log(`Routing ${repo}#${issueId}: ${relevantGates.length} triggers matched, asking CPU to disambiguate`);
+      const cpuResult = await cpuDisambiguate(issue.title, issue.body, relevantGates);
+      if (cpuResult) {
+        log(`Routing ${repo}#${issueId}: CPU narrowed → [${cpuResult.join(',')}]`);
+        return cpuResult;
+      }
+    }
+    log(`Routing ${repo}#${issueId}: trigger match → [${relevantGates.join(',')}]`);
+    return relevantGates;
+  }
+
+  // 3. No triggers matched — CPU full analysis
+  log(`Routing ${repo}#${issueId}: no trigger match, full CPU analysis`);
+  const cpuResult = await cpuDisambiguate(issue.title, issue.body, pipelineGates);
+  if (cpuResult) {
+    log(`Routing ${repo}#${issueId}: CPU analysis → [${cpuResult.join(',')}]`);
+    return cpuResult;
+  }
+
+  // 4. CPU also failed — return null to signal "ask the human"
+  log(`Routing ${repo}#${issueId}: no confidence — will ask human`);
+  return null;
 }
 
 // ── Spawn a worker container ──────────────────────────────────────────────────
@@ -295,16 +390,30 @@ async function startPipeline(repo, issueId, opts = {}) {
   const issueTitle = issue.title || '';
   const issueBody  = issue.body  || '';
 
-  // Determine gates
-  let gates;
+  // Determine gates via routing (triggers → CPU → ask human)
   const rules = await readRulesYaml(repo);
+  let gates;
+
   if (opts.role) {
-    gates = [opts.role];  // Forced single gate
-  } else if (rules) {
-    gates = rules.gates;
+    gates = [opts.role];  // Forced single gate (label override or re-trigger)
   } else {
-    // CPU analysis fallback
-    gates = await cpuAnalyzeIssue(issueTitle, issueBody);
+    // Smart routing: triggers → CPU disambiguation → ask human
+    const routed = await routeIssue(repo, issueId, issue, rules);
+
+    if (routed === null) {
+      // No confidence — ask the human
+      await provider.addComment(repo, issueId,
+        `🤔 I couldn't determine which specialists are needed for this issue.\n\n` +
+        `Available gates: ${(rules?.gates || SPECIALISTS).map(g => `\`${g}\``).join(', ')}\n\n` +
+        `Please add a label like \`gate:fullstack\` or \`gate:security\` to specify, then reassign me.`
+      ).catch(() => {});
+      await provider.setLabel(repo, issueId, 'needs-routing').catch(() => {});
+      setPipeline(repo, issueId, { status: 'needs_routing', gates: [], currentGate: -1 });
+      audit('needs_routing', { repo, issueId });
+      return;
+    }
+
+    gates = routed;
   }
 
   // Create branch name

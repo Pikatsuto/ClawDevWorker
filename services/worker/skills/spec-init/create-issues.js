@@ -132,20 +132,63 @@ async function createIssue(story) {
     { title: story.fullTitle, body: bodyText, assignees: [AGENT_LOGIN] });
 }
 
+// ── Load specialist triggers from rules.yaml for auto-tagging ─────────────────
+
+function loadTriggers() {
+  const rulesPath = process.env.RULES_FILE || `${process.env.WORKSPACE || '.'} /.coderclaw/rules.yaml`;
+  try {
+    if (!fs.existsSync(rulesPath.trim())) return {};
+    const content = fs.readFileSync(rulesPath.trim(), 'utf8');
+    const triggers = {};
+    const specSection = content.split(/^specialists:\s*$/m)[1] || '';
+    const blocks = specSection.split(/\n  (\w+):\s*\n/);
+    for (let i = 1; i < blocks.length; i += 2) {
+      const name = blocks[i];
+      const block = blocks[i + 1] || '';
+      const m = block.match(/triggers:\s*\[([^\]]+)\]/);
+      if (m) {
+        triggers[name] = m[1].split(',').map(t => t.trim().replace(/['"]/g, '').toLowerCase());
+      }
+    }
+    return triggers;
+  } catch { return {}; }
+}
+
+function detectGates(storyText, triggers) {
+  const text = storyText.toLowerCase();
+  const gates = [];
+  for (const [role, keywords] of Object.entries(triggers)) {
+    for (const kw of keywords) {
+      if (text.includes(kw)) { gates.push(role); break; }
+    }
+  }
+  return gates;
+}
+
+const SPECIALIST_TRIGGERS = loadTriggers();
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 (async () => {
-  console.log(`\n=== /spec init — ${stories.length} user stories sur ${REPO} ===\n`);
+  console.log(`\n=== /spec init — ${stories.length} user stories on ${REPO} ===\n`);
 
-  // First pass: create all issues and map US-NNN → issue number
-  const usToIssueNum = {}; // { '001': 3, '002': 4, ... }
+  // First pass: create all issues, auto-tag with gate labels, map US-NNN → issue number
+  const usToIssueNum = {};
 
   for (const story of stories) {
     try {
       const r = await createIssue(story);
       if (r.data?.number) {
         usToIssueNum[story.usNum] = r.data.number;
-        console.log(`✓ #${r.data.number} ${story.fullTitle}` +
+
+        // Auto-tag: detect specialist gates from story content
+        const gates = detectGates(`${story.fullTitle} ${story.body}`, SPECIALIST_TRIGGERS);
+        for (const gate of gates) {
+          await provider.setLabel(`${owner}/${repoName}`, r.data.number, `gate:${gate}`).catch(() => {});
+        }
+
+        const gateStr = gates.length ? ` [${gates.map(g => `gate:${g}`).join(', ')}]` : '';
+        console.log(`✓ #${r.data.number} ${story.fullTitle}${gateStr}` +
           (story.deps.length ? ` [depends on: ${story.deps.map(n=>`US-${n}`).join(', ')}]` : ''));
       } else {
         console.error(`❌ ${story.fullTitle} : ${JSON.stringify(r.data).slice(0, 100)}`);
