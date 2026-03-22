@@ -19,7 +19,7 @@ jobs:
     outputs:
       services: ${{ steps.scan.outputs.services }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: scan
         run: |
           # Discover all services with a Dockerfile
@@ -41,21 +41,21 @@ jobs:
       matrix:
         service: ${{ fromJson(needs.discover.outputs.services) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Login GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_PREFIX }}/cdw-${{ matrix.service }}
           tags: |
@@ -63,7 +63,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build & Push — ${{ matrix.service }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload status
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-status-${{ matrix.service }}
           path: /tmp/build-status/${{ matrix.service }}
@@ -92,7 +92,7 @@ jobs:
     if: always()
     steps:
       - name: Download statuses
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: build-status-*
           path: /tmp/build-status
