@@ -1,4 +1,4 @@
-# ClawDevWorker v14
+# ClawDevWorker
 
 Autonomous multi-agent development stack: ephemeral Code Server + Ollama + specialist OpenClaw agents on local GPU.
 

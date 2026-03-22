@@ -80,7 +80,7 @@ COPY services/worker/skills/staged-diff/      /opt/skills/staged-diff/
 COPY services/worker/skills/spec-init/        /opt/skills/spec-init/
 COPY services/agent/specialists/              /opt/specialists/
 COPY services/worker/skills/loop-detect/      /opt/skills/loop-detect/
-# ── New v14 skills: BMAD + user-token + git-provider ─────────────────────────
+# ── New skills: BMAD + user-token + git-provider ─────────────────────────
 COPY services/chat/skills/bmad/               /opt/skills/bmad/
 COPY services/chat/skills/user-token/         /opt/skills/user-token/
 COPY services/chat/skills/git-provider/       /opt/skills/git-provider-chat/
