@@ -19,7 +19,7 @@ jobs:
     outputs:
       services: ${{ steps.scan.outputs.services }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - id: scan
         run: |
           # Discover all services with a Dockerfile
@@ -41,7 +41,7 @@ jobs:
       matrix:
         service: ${{ fromJson(needs.discover.outputs.services) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Login GHCR
         uses: docker/login-action@v4
@@ -63,7 +63,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build & Push — ${{ matrix.service }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload status
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: build-status-${{ matrix.service }}
           path: /tmp/build-status/${{ matrix.service }}
@@ -92,7 +92,7 @@ jobs:
     if: always()
     steps:
       - name: Download statuses
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: build-status-*
           path: /tmp/build-status
