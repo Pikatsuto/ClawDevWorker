@@ -60,14 +60,10 @@ RUN curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" \
  && rm /tmp/go.tar.gz
 
 # ── Rust ──────────────────────────────────────────────────────────────────────
-# Download rustup-init binary directly (skip shell script to avoid dash/buildx issues)
-RUN curl -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
- && chmod +x /tmp/rustup-init \
- && /tmp/rustup-init -y --no-modify-path --default-toolchain stable \
- && rm /tmp/rustup-init \
- && cp -r /root/.cargo /home/coder/.cargo \
- && cp -r /root/.rustup /home/coder/.rustup \
- && chown -R coder:coder /home/coder/.cargo /home/coder/.rustup
+RUN apt-get update && apt-get install -y --no-install-recommends rustc cargo \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /home/coder/.cargo \
+ && chown -R coder:coder /home/coder/.cargo
 
 # ── Code Server ───────────────────────────────────────────────────────────────
 RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_amd64.deb" \
