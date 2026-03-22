@@ -41,7 +41,7 @@ There are no test suites or linters configured at the repo level.
 
 ### Network Segmentation
 
-Services communicate through isolated Docker networks: `frontend` (public), `backend` (internal, LLM), `docs-net`, `mcp-net` (agents to MCP tools), `proxy-net`/`proxy-internal-net` (squid outbound), plus external networks `coolify` (Traefik) and `forgejo-net`.
+Services communicate through isolated Docker networks: `frontend` (public), `backend` (internal, LLM), `docs-net`, `mcp-net` (agents to MCP tools), `proxy-net`/`proxy-internal-net` (squid outbound), plus external networks `coolify` (Coolify uses Traefik internally) and `forgejo-net`.
 
 ### GPU Scheduling (3 modes)
 

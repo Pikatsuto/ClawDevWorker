@@ -136,7 +136,7 @@ services:
   #
   # Image: ghcr.io/pikatsuto/cdw-devcontainer:latest (built by CI)
   # Spawn via: openclaw-agent → docker run --rm --network coolify ...
-  # Ephemeral URLs via dynamic Traefik labels: dev-<id>.<DEV_DOMAIN>
+  # Ephemeral URLs via dynamic Coolify labels (Traefik): dev-<id>.<DEV_DOMAIN>
   #
   # Persistent per-user volumes (auto-created on first spawn):
   #   dev_user_<userId>_vscode      ← VSCode settings + keybindings
@@ -410,7 +410,7 @@ services:
       # Host Docker socket — mounted under /var/run/host-docker.sock
       # to NOT overwrite the internal rootless DinD
       # DOCKER_HOST=unix:///var/run/host-docker.sock used only
-      # for spawning ephemeral Code Server containers via Traefik
+      # for spawning ephemeral Code Server containers via Coolify
       - /var/run/docker.sock:/var/run/host-docker.sock:ro
     labels:
       - "traefik.enable=true"

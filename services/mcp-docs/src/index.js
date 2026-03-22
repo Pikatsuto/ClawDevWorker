@@ -145,6 +145,8 @@ const LEVEL3_FETCH_DOMAINS = new Set([
   'wiki.archlinux.org','wiki.gentoo.org','docs.kernel.org',
 ]);
 
+const OLLAMA_CPU_URL = process.env.OLLAMA_CPU_URL || 'http://ollama-cpu:11434';
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); }
@@ -413,10 +415,114 @@ async function searchWeb(query) {
   return results;
 }
 
+// ── Auto-download: language detection via CPU Ollama ──────────────────────────
+
+const VALID_SLUGS = new Set([
+  'javascript', 'python', 'react', 'node', 'go', 'rust', 'css', 'html',
+  'ruby', 'php', 'typescript', 'vue', 'angular', 'docker', 'git', 'bash',
+  'c', 'cpp', 'java', 'kotlin', 'swift', 'django', 'flask', 'express',
+  'fastify', 'nextjs', 'svelte', 'tailwindcss', 'postgresql', 'redis',
+  'mongodb', 'elasticsearch',
+]);
+
+async function detectLanguageViaCPU(query) {
+  const slugList = [...VALID_SLUGS].join(', ');
+  const prompt = `What is the main programming language or technology for this query? Reply with ONLY one DevDocs slug name from this list: ${slugList}. If none match, reply NONE.\n\nQuery: ${query}`;
+  try {
+    const postData = JSON.stringify({
+      model: process.env.OLLAMA_CPU_MODEL || 'qwen3:0.6b',
+      prompt,
+      stream: false,
+      keep_alive: 0,
+      options: { num_gpu: 0, num_predict: 20, temperature: 0 },
+    });
+    const result = await new Promise((resolve, reject) => {
+      const url = new URL(`${OLLAMA_CPU_URL}/api/generate`);
+      const t = setTimeout(() => reject(new Error('timeout')), 15000);
+      const req = http.request({
+        hostname: url.hostname, port: url.port, path: url.pathname,
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+      }, (res) => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => { clearTimeout(t); try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+      });
+      req.on('error', e => { clearTimeout(t); reject(e); });
+      req.write(postData);
+      req.end();
+    });
+    const raw = (result.response || '').toLowerCase().trim().replace(/[^a-z0-9+._-]/g, '');
+    if (VALID_SLUGS.has(raw)) return raw;
+    // Try to find a valid slug in the response text
+    for (const slug of VALID_SLUGS) {
+      if ((result.response || '').toLowerCase().includes(slug)) return slug;
+    }
+    return null;
+  } catch (e) {
+    process.stderr.write(`[mcp-docs] detectLanguageViaCPU error: ${e.message}\n`);
+    return null;
+  }
+}
+
+async function isDocInstalled(slug) {
+  try {
+    const status = await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), 5000);
+      const req = http.get(`${DEVDOCS_URL}/docs/${slug}/index.json`, (res) => {
+        clearTimeout(t);
+        // Consume body to free the socket
+        res.resume();
+        resolve(res.statusCode);
+      });
+      req.on('error', e => { clearTimeout(t); reject(e); });
+    });
+    return status === 200;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function triggerDocDownload(slug) {
+  // Signal the orchestrator/sidecar via stdout with a special prefix
+  process.stderr.write(`[devdocs-install] ${slug}\n`);
+
+  // Also attempt a GET to DevDocs download endpoint (some versions support it)
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), 10000);
+      const req = http.get(`${DEVDOCS_URL}/docs/${slug}/download`, (res) => {
+        clearTimeout(t);
+        res.resume();
+        resolve(res.statusCode);
+      });
+      req.on('error', e => { clearTimeout(t); reject(e); });
+    });
+    process.stderr.write(`[mcp-docs] triggered download for ${slug} via DevDocs endpoint\n`);
+  } catch (e) {
+    process.stderr.write(`[mcp-docs] DevDocs download endpoint unavailable for ${slug}: ${e.message}\n`);
+  }
+}
+
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 async function searchDocs(query) {
   let results = await searchDevDocs(query);
   if (results.length > 0) return { results, level: 1, source: 'DevDocs' };
+
+  // Auto-detect language and trigger doc download if missing
+  try {
+    const slug = await detectLanguageViaCPU(query);
+    if (slug) {
+      const installed = await isDocInstalled(slug);
+      if (!installed) {
+        process.stderr.write(`[mcp-docs] doc "${slug}" not installed, triggering download\n`);
+        triggerDocDownload(slug); // fire-and-forget, don't await
+      } else {
+        process.stderr.write(`[mcp-docs] doc "${slug}" already installed\n`);
+      }
+    }
+  } catch (e) {
+    process.stderr.write(`[mcp-docs] auto-detect error: ${e.message}\n`);
+  }
 
   results = await searchOfficialApis(query);
   if (results.length > 0) return { results, level: 2, source: 'Official APIs' };

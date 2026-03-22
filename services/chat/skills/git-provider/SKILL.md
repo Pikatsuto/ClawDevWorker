@@ -1,6 +1,6 @@
 ---
 name: git-provider
-description: "Forgejo and GitHub access from the chat. Uses the USER's token (not the agent token) for operations on their account: creating repos, inviting collaborators, reading issues and PRs. Required by /spec init and /project status. Loads the token from ~/.openclaw/user-tokens/<userId>.json via the user-token skill."
+description: "Forgejo and GitHub access from the chat. Uses the USER's personal token for privileged operations (create repos, invite collaborators, setup webhooks, branch protection). Read operations use the agent token. Supports both Forgejo and GitHub App providers."
 metadata: {"openclaw":{"emoji":"🐙"}}
 user-invocable: false
 always: false
@@ -12,77 +12,55 @@ always: false
 
 ## Token used
 
-This skill uses the developer's PERSONAL token (not the agent token).
-It must be registered with `/token set` beforehand.
+- **Read operations** (issues, PRs, files): agent token (automatic)
+- **Privileged operations** (create repo, invite, webhook, protect branch, delete branch): user's PERSONAL token via `/token set`
 
-## Available operations
+## Privileged operations — REQUIRE HUMAN CONFIRMATION
 
-### Repo creation
+**IMPORTANT**: The following operations modify the user's account or repo settings.
+ALWAYS ask for explicit confirmation before executing them. Never run them silently.
+
+| Operation | What it does | Confirmation required |
+|-----------|-------------|----------------------|
+| `provider.createRepo(name, opts)` | Creates a repo on the user's account | ✅ Yes |
+| `provider.addCollaborator(repo, username)` | Invites a user as collaborator | ✅ Yes |
+| `provider.createWebhook(repo, opts)` | Adds a webhook to the repo | ✅ Yes |
+| `provider.protectBranch(repo, branch)` | Enables branch protection rules | ✅ Yes |
+| `provider.deleteBranch(repo, branch)` | Deletes a branch from the remote | ✅ Yes |
+
+## Read operations — no confirmation needed
+
+| Operation | What it does |
+|-----------|-------------|
+| `provider.getIssue(repo, id)` | Get a single issue |
+| `provider.listOpenIssues(repo)` | List open issues |
+| `provider.listOpenPRs(repo)` | List open PRs |
+| `provider.getPR(repo, id)` | Get a single PR |
+| `provider.getPRDiff(repo, id)` | Get PR diff |
+| `provider.getFileContent(repo, path)` | Read a file from the repo |
+| `provider.addComment(repo, issueId, body)` | Comment on an issue/PR |
+
+## Provider detection
+
+The provider is automatically detected from:
+1. `--provider` flag if specified
+2. User token type (forgejo vs github)
+3. First configured provider as fallback
+
+Both providers implement the same interface — no code change needed.
+
+## Shared module
 
 ```javascript
-const { execSync } = require('child_process');
-const path = require('path');
-
-// Load the user token
-const TOKEN_FILE = path.join(process.env.HOME, '.openclaw', 'user-tokens',
-  `${process.env.USER_ID || 'default'}.json`);
-const tokens = JSON.parse(require('fs').readFileSync(TOKEN_FILE, 'utf8'));
-const userToken = tokens.forgejo || tokens.github;
-const providerUrl = process.env.GIT_PROVIDER_1_URL || 'http://host-gateway:3000';
-
-// Create repo via Forgejo API
-async function createRepo({ name, description = '', private: isPrivate = true }) {
-  const payload = JSON.stringify({ name, description, private: isPrivate, auto_init: true });
-  // POST /api/v1/user/repos
-}
-
-// Invite the agent as a collaborator
-async function addCollaborator({ owner, repo, username, permission = 'write' }) {
-  // PUT /api/v1/repos/{owner}/{repo}/collaborators/{username}
-}
-
-// Create an issue
-async function createIssue({ owner, repo, title, body, assignees = [] }) {
-  // POST /api/v1/repos/{owner}/{repo}/issues
-}
-
-// Get open issues
-async function listIssues({ owner, repo, state = 'open' }) {
-  // GET /api/v1/repos/{owner}/{repo}/issues
-}
-
-// Get PRs
-async function listPullRequests({ owner, repo, state = 'open' }) {
-  // GET /api/v1/repos/{owner}/{repo}/pulls
-}
+const { loadProviders, getProviderForRepo } = require('/opt/git-provider/index.js');
+const providers = loadProviders();
+const provider = getProviderForRepo('owner/repo', providers);
 ```
 
-### User commands
+## User commands
 
 | Command | Action |
 |---------|--------|
 | `/project status <owner/repo>` | Open issues, PRs, pipeline |
 | `/project issues <owner/repo>` | Lists issues with their status |
 | `/project prs <owner/repo>` | Lists PRs |
-
-## Usage in /spec init
-
-```
-1. Check user token availability (via user-token skill)
-2. createRepo({ name, private: true })
-3. addCollaborator({ username: AGENT_GIT_LOGIN })
-4. [BMAD generates the stories]
-5. For each story: createIssue({ assignees: [AGENT_GIT_LOGIN] })
-6. POST /deps to the orchestrator for the DAG
-```
-
-## Shared module
-
-This skill wraps `/opt/git-provider/index.js` which contains the complete
-implementation for Forgejo and GitHub (already in the image via COPY).
-
-```javascript
-// Load the provider with the user token
-const { loadProviders } = require('/opt/git-provider/index.js');
-// Override the token with the user's token for this operation
-```

@@ -10,9 +10,9 @@ Agents receive Forgejo or GitHub issues, analyze them, code, review through an R
 
 ```
 Internet
- └── chat.example.com          → Traefik → openclaw-chat
- └── dev-<id>.DEV_DOMAIN       → Traefik → ephemeral Code Server container
- └── ssh.dev-<id>.DEV_DOMAIN   → Traefik → container sshd (if /ssh-key configured)
+ └── chat.example.com          → Coolify → openclaw-chat
+ └── dev-<id>.DEV_DOMAIN       → Coolify → ephemeral Code Server container
+ └── ssh.dev-<id>.DEV_DOMAIN   → Coolify → container sshd (if /ssh-key configured)
 ```
 
 ### Dev sessions — ephemeral vs persistent
@@ -236,7 +236,7 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 | `DEVCONTAINER_MEMORY` | `4g` | RAM per session |
 | `DEVCONTAINER_CPUS` | `2.0` | CPUs per session |
 | `DEV_IDLE_MS` | `1800000` | Idle timeout (30min) |
-| `DEV_NETWORK` | `coolify` | Docker network for Traefik |
+| `DEV_NETWORK` | `coolify` | Docker network shared with Coolify |
 | `GATE_MAX_RETRIES` | `3` | Retries before human escalation |
 | `LOOP_DETECT_THRESHOLD` | `2` | Repeated hash → loop detected |
 | `UPGRADE_THRESHOLD` | `30` | Score delta before upgrade suggestion |
@@ -247,7 +247,7 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 ## Deployment checklist
 
 - [ ] Wildcard DNS `*.DEV_DOMAIN` → server IP
-- [ ] Traefik configured for wildcard TLS
+- [ ] Coolify configured for wildcard TLS
 - [ ] `.env` filled from `.env.example`
 - [ ] `docker compose up -d`
 - [ ] `docker compose logs ollama-init` → models downloaded
@@ -255,6 +255,111 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 - [ ] Forgejo webhook → `http://openclaw-agent:9000/webhook`
 - [ ] Branch protection on `main` (Required approvals: 1)
 - [ ] `.coderclaw/rules.yaml` in each target repo
+
+---
+
+## Webhook setup
+
+### Forgejo
+
+1. Go to the repo → **Settings → Webhooks → Add Webhook → Gitea**
+2. Target URL: `http://openclaw-agent:9000/webhook`
+3. Content Type: `application/json`
+4. Secret: same as `GIT_PROVIDER_1_WEBHOOK_SECRET` in `.env`
+5. Events: **Issues**, **Issue Comments**, **Pull Requests**
+6. Active: ✅
+
+> `/spec init` configures the webhook automatically for new repos.
+
+### GitHub
+
+GitHub uses a **GitHub App** instead of simple webhooks:
+
+1. Create a GitHub App at **Settings → Developer Settings → GitHub Apps → New**
+2. App permissions:
+   - **Repository**: Issues (read/write), Pull requests (read/write), Contents (read)
+   - **Organization**: Members (read)
+3. Subscribe to events: **Issues**, **Issue comment**, **Pull request**
+4. Generate a private key and base64-encode it:
+   ```bash
+   base64 -w0 < your-app.private-key.pem
+   ```
+5. Install the App on the target repos
+6. Set env vars in `.env`:
+   ```
+   GIT_PROVIDER_2=github
+   GIT_PROVIDER_2_APP_ID=<app-id>
+   GIT_PROVIDER_2_PRIVATE_KEY_B64=<base64-encoded-key>
+   GIT_PROVIDER_2_INSTALLATION_ID=<installation-id>
+   GIT_PROVIDER_2_WEBHOOK_SECRET=<webhook-secret>
+   ```
+7. In the GitHub App settings, set the webhook URL to the agent's public URL
+
+> GitHub App webhooks are configured at the app level, not per-repo.
+
+---
+
+## Branch protection
+
+`/spec init` configures branch protection automatically. To do it manually:
+
+### Forgejo
+
+1. Repo → **Settings → Branches → Add Rule**
+2. Branch pattern: `main`
+3. ✅ Enable push restriction
+4. ✅ Enable merge whitelist
+5. Required approvals: **1**
+6. ✅ Dismiss stale approvals
+
+### GitHub
+
+1. Repo → **Settings → Branches → Add branch protection rule**
+2. Branch name pattern: `main`
+3. ✅ Require a pull request before merging
+4. Required approving reviews: **1**
+5. ✅ Dismiss stale pull request approvals
+
+---
+
+## .coderclaw/rules.yaml
+
+`/spec init` creates a default `rules.yaml`. The `/rules` command provides an interactive session to customize it. To edit manually:
+
+```yaml
+# .coderclaw/rules.yaml
+pipeline:
+  gates: [architect, fullstack, security, qa, doc]
+  require_all: true        # false = parallel gates
+  max_retries: 3           # retries before human escalation
+  retry_upgrade: true      # upgrade model on retry
+
+specialists:
+  architect:
+    triggers: [architecture, adr, migration, refactoring, breaking change]
+  frontend:
+    triggers: [ui, ux, component, page, vue, react, responsive]
+  backend:
+    triggers: [api, endpoint, auth, database, migration, sql, cache]
+  devops:
+    triggers: [docker, ci, cd, deploy, monitoring]
+  security:
+    triggers: [security, injection, xss, csrf, auth, password, token]
+  qa:
+    triggers: [test, spec, e2e, coverage, regression, bug, fix]
+  doc:
+    triggers: [documentation, readme, jsdoc, changelog, guide]
+  marketing:
+    triggers: [seo, landing, conversion, copy]
+  design:
+    triggers: [branding, color, typography, mockup, accessibility]
+  product:
+    triggers: [prd, user story, acceptance, roadmap, backlog]
+  bizdev:
+    triggers: [pricing, subscription, go-to-market, partnership]
+```
+
+Only listed gates run. Specialists not in `gates` are available for routing but won't block the pipeline.
 
 ---
 

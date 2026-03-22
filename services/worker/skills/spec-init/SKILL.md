@@ -16,6 +16,8 @@ user-invocable: true
   ↓
 Clone empty repo into ephemeral container
   ↓
+Interactive /rules session (configure .coderclaw/rules.yaml)
+  ↓
 Interactive BMAD (or doc mode if context provided)
   → PRD.md          — vision, objectives, personas, KPIs
   → ARCHITECTURE.md — stack, components, technical decisions
@@ -58,7 +60,11 @@ git config user.email "agent@coderclaw.local"
 git config user.name "CoderClaw Agent"
 ```
 
-### 2. Generate the spec via BMAD
+### 2. Configure pipeline rules (interactive /rules)
+
+Before generating the spec, run the `/rules` interactive session to configure `.coderclaw/rules.yaml`. This lets the user choose pipeline gates, specialist triggers, and retry behavior tailored to their project. The generated rules file will be included in the initial commit alongside the spec.
+
+### 3. Generate the spec via BMAD
 
 If BMAD is available in headless mode:
 
@@ -89,7 +95,7 @@ SPEC_PROMPT
 fi
 ```
 
-### 3. Generated file structure
+### 4. Generated file structure
 
 ```
 docs/spec/
@@ -101,7 +107,7 @@ docs/spec/
 └── context.yaml        ← Project metadata
 ```
 
-### 4. Commit and push
+### 5. Commit and push
 
 ```bash
 mkdir -p docs/spec .coderclaw
@@ -123,7 +129,7 @@ git push origin main
 echo "✓ Spec committed on main"
 ```
 
-### 5. Create issues from USER_STORIES.md
+### 6. Create issues from USER_STORIES.md
 
 ```javascript
 // create-issues.js — parse USER_STORIES.md and create issues

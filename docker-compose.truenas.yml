@@ -30,7 +30,7 @@
 #
 # TrueNAS prerequisites:
 #   - NVIDIA driver: TrueNAS UI → System → NVIDIA Driver → Install
-#   - External Traefik/Coolify and Forgejo networks already existing:
+#   - External Coolify and Forgejo networks already existing:
 #       docker network ls | grep -E "coolify|forgejo"
 ###############################################################################
 

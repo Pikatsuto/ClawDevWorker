@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -rn -i 'traefik' README.md CLAUDE.md .env.example docker-compose*.yml)"
+    ]
+  }
+}
