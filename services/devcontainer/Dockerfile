@@ -60,12 +60,11 @@ RUN curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" \
  && rm /tmp/go.tar.gz
 
 # ── Rust ──────────────────────────────────────────────────────────────────────
-# Download rustup-init separately to isolate network vs execution errors
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
- && chmod +x /tmp/rustup-init.sh \
- && /tmp/rustup-init.sh -y --no-modify-path \
- && rm /tmp/rustup-init.sh \
- && /root/.cargo/bin/rustup default stable \
+# Download rustup-init binary directly (skip shell script to avoid dash/buildx issues)
+RUN curl -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
+ && chmod +x /tmp/rustup-init \
+ && /tmp/rustup-init -y --no-modify-path --default-toolchain stable \
+ && rm /tmp/rustup-init \
  && cp -r /root/.cargo /home/coder/.cargo \
  && cp -r /root/.rustup /home/coder/.rustup \
  && chown -R coder:coder /home/coder/.cargo /home/coder/.rustup
