@@ -24,8 +24,6 @@ FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CODE_SERVER_VERSION=4.95.3
 
-SHELL ["/bin/bash", "-c"]
-
 ENV HOME=/home/coder \
     USER=coder \
     SHELL=/bin/bash \
@@ -62,8 +60,11 @@ RUN curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" \
  && rm /tmp/go.tar.gz
 
 # ── Rust ──────────────────────────────────────────────────────────────────────
-RUN set -euxo pipefail \
- && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --no-modify-path \
+# Download rustup-init separately to isolate network vs execution errors
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
+ && chmod +x /tmp/rustup-init.sh \
+ && /tmp/rustup-init.sh -y --no-modify-path \
+ && rm /tmp/rustup-init.sh \
  && /root/.cargo/bin/rustup default stable \
  && cp -r /root/.cargo /home/coder/.cargo \
  && cp -r /root/.rustup /home/coder/.rustup \
