@@ -74,7 +74,9 @@ RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_S
  && rm /tmp/code-server.deb
 
 # ── OpenClaw — copied from coollabsio ────────────────────────────────────────
-COPY --from=openclaw-base /usr/local/lib/node_modules/openclaw /opt/openclaw
+# openclaw is installed at /opt/openclaw in the upstream image
+# binary at /usr/local/bin/openclaw → exec node /opt/openclaw/app/openclaw.mjs
+COPY --from=openclaw-base /opt/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
 COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts
 
