@@ -10,9 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Node.js 22 ────────────────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+RUN NODE_MAJOR=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)] | .[0].version | split(".")[0] | ltrimstr("v")') \
+ && curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+ && apt-get install -y nodejs \
+ && rm -rf /var/lib/apt/lists/*
 
 # ── OpenClaw CLI ──────────────────────────────────────────────────────────────
 

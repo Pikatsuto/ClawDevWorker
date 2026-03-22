@@ -40,10 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node.js 22 LTS ───────────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# ── Node.js ───────────────────────────────────────────────────────────
+RUN NODE_MAJOR=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)] | .[0].version | split(".")[0] | ltrimstr("v")') \
+ && curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
 
 # ── OpenClaw — installed globally ─────────────────────────────────────────────
 RUN npm install -g openclaw 2>/dev/null || \

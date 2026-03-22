@@ -22,7 +22,6 @@ FROM coollabsio/openclaw:latest AS openclaw-base
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG CODE_SERVER_VERSION=4.95.3
 
 ENV HOME=/home/coder \
     USER=coder \
@@ -47,14 +46,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node.js 22 LTS ───────────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+# ── Node.js ───────────────────────────────────────────────────────────
+RUN NODE_MAJOR=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)] | .[0].version | split(".")[0] | ltrimstr("v")') \
+ && curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g yarn pnpm typescript ts-node
 
-# ── Go 1.22 ───────────────────────────────────────────────────────────────────
-RUN curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" \
+# ── Go (latest stable) ────────────────────────────────────────────────────────
+RUN GO_VERSION=$(curl -fsSL "https://go.dev/VERSION?m=text" | head -1 | sed 's/^go//') \
+ && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
       -o /tmp/go.tar.gz \
  && tar -C /usr/local -xzf /tmp/go.tar.gz \
  && rm /tmp/go.tar.gz
@@ -66,7 +67,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends rustc cargo \
  && chown -R coder:coder /home/coder/.cargo
 
 # ── Code Server ───────────────────────────────────────────────────────────────
-RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_amd64.deb" \
+RUN CS_VERSION=$(curl -fsSL "https://api.github.com/repos/coder/code-server/releases/latest" | jq -r .tag_name | sed 's/^v//') \
+ && curl -fsSL "https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server_${CS_VERSION}_amd64.deb" \
       -o /tmp/code-server.deb \
  && dpkg -i /tmp/code-server.deb \
  && rm /tmp/code-server.deb
