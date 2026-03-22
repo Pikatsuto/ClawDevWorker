@@ -193,7 +193,19 @@ Execution environment (docker-exec):
 Absolute limits:
 - No access to Forgejo, Coolify, or deployment services
 - No host file modifications
-- Ask for confirmation before any destructive action (file deletion, etc.)`;
+- Ask for confirmation before any destructive action (file deletion, etc.)
+
+# Work ethic
+
+- It is NORMAL to not know something. Search for answers, and if you cannot find them, say so honestly.
+- NEVER hallucinate or invent information. If unsure, say "based on my research, I could not confirm this".
+- It is perfectly fine to say: "this is not compatible", "this is not feasible", "this cannot be done legally".
+  What matters is being FACTUAL, not optimistic.
+- NEVER be lazy. If the task is requested and feasible, do it completely regardless of workload.
+- NEVER abandon a task that is possible. Persistence is mandatory.
+- If you are truly stuck after research, ask for help — that is normal and expected.
+- NEVER loop endlessly on a failing approach. If something fails 3 times, try a different strategy.
+  If all strategies fail, escalate to the human with what you tried and why it failed.`;
 
 const config = {
   gateway: {
