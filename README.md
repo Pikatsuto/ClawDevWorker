@@ -54,7 +54,14 @@ Model upgrade/downgrade:
 
 **Business:** `marketing` `design` `product` `bizdev`
 
-Each specialist has a dedicated system prompt. The CPU analyzes the issue and determines the required specialists. Forgejo/GitHub labels serve as manual override.
+Each specialist has a dedicated system prompt. Routing priority: git labels (manual override) → trigger matching (rules.yaml keywords vs issue text) → CPU disambiguation → ask human.
+
+Per-specialist model defaults:
+- **Reasoning** (architect, security) → `qwen3.5:27b-q3_k_m`
+- **Code** (fullstack, backend, frontend, devops, qa) → `qwen3.5:9b`
+- **Writing** (doc, marketing, design, product, bizdev) → `mistral:7b`
+
+Override per role via `MODEL_<ROLE>` env var or `model:` field in rules.yaml.
 
 ### Per-project configurable RBAC pipeline
 
@@ -68,6 +75,33 @@ pipeline:
 ```
 
 Unlisted gates = ignored. `require_all: false` = parallel gates without blocking.
+
+### Git flow
+
+```
+feat/42-dark-mode (shared branch, all gates commit here)
+  ├── architect commits (ADR, decomposition)
+  ├── fullstack commits (implementation)
+  ├── security commits (fixes found by audit)
+  ├── qa commits (tests)
+  └── doc commits (documentation)
+→ Single PR: feat/42-dark-mode → main
+→ Human reviews and merges
+→ auto-promote creates promotion PR if gitflow enabled
+→ auto-release creates tag + changelog from conventional commits
+```
+
+Configurable in `.coderclaw/rules.yaml`:
+```yaml
+git_flow:
+  strategy: trunk          # trunk | gitflow
+  target_branch: main
+
+releases:
+  enabled: true
+  strategy: conventional   # conventional | manual
+  prefix: v
+```
 
 ### Issue dependency DAG
 
@@ -112,7 +146,8 @@ If `/ssh-key` is configured, each session also exposes SSH access compatible wit
 ### Project initialization
 
 ```
-/spec init owner/repo               → BMAD → PRD + Architecture + User Stories → Forgejo issues
+/spec init owner/repo               → /rules → BMAD → PRD + Architecture + User Stories → issues
+/spec init owner/repo --provider github  → same, on GitHub instead of Forgejo
 /spec status owner/repo             → pipeline status
 ```
 
@@ -175,6 +210,29 @@ If `/ssh-key` is configured, each session also exposes SSH access compatible wit
 /gpu models                         → available models
 ```
 
+### Pipeline rules
+
+```
+/rules                              → interactive pipeline configuration
+/rules owner/repo                   → configure rules for a specific repo
+```
+
+### Branch cleanup
+
+```
+/clean                              → interactive branch cleanup (current project)
+/clean owner/repo                   → cleanup branches on a specific repo
+```
+
+### Pipeline control (in issue/PR comments)
+
+```
+/stop                               → freeze the pipeline on this issue
+/retry                              → restart the pipeline from current gate
+(any comment on a PR)               → auto-triggers relevant gates
+(comment on merged PR)              → resumes work on the same branch
+```
+
 ---
 
 ## Devcontainer.json
@@ -231,7 +289,8 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 | `MODEL_LIGHT` | `qwen3.5:4b` | Score 10–30 |
 | `MODEL_TRIVIAL` | `qwen3.5:2b` | Score < 10 |
 | `MODEL_CPU` | `qwen3.5:0.8b` | CPU orchestration |
-| `MODEL_<ROLE>` | — | Per-role override (e.g. `MODEL_MARKETING=mistral:7b`) |
+| `MODEL_<ROLE>` | — | Per-role override (e.g. `MODEL_SECURITY=qwen3.5:27b-q3_k_m`) |
+| `MODEL_WRITING` | `mistral:7b` | Default model for writing roles (doc, marketing, design, product, bizdev) |
 | `DEVCONTAINER_IMAGE` | `cdw-devcontainer:latest` | Dev session image |
 | `DEVCONTAINER_MEMORY` | `4g` | RAM per session |
 | `DEVCONTAINER_CPUS` | `2.0` | CPUs per session |
@@ -251,7 +310,7 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 - [ ] `.env` filled from `.env.example`
 - [ ] `docker compose up -d`
 - [ ] `docker compose logs ollama-init` → models downloaded
-- [ ] DevDocs: `docker compose exec devdocs thor docs:download javascript`
+- [ ] DevDocs: downloads automatically when agents search for missing documentation
 - [ ] Forgejo webhook → `http://openclaw-agent:9000/webhook`
 - [ ] Branch protection on `main` (Required approvals: 1)
 - [ ] `.coderclaw/rules.yaml` in each target repo
@@ -334,9 +393,20 @@ pipeline:
   max_retries: 3           # retries before human escalation
   retry_upgrade: true      # upgrade model on retry
 
+releases:
+  enabled: true
+  strategy: conventional   # conventional | manual
+  prefix: v
+
 specialists:
   architect:
     triggers: [architecture, adr, migration, refactoring, breaking change]
+    model: qwen3.5:27b-q3_k_m
+    fallback: qwen3.5:9b
+  security:
+    triggers: [security, injection, xss, csrf, auth, password, token]
+    model: qwen3.5:27b-q3_k_m
+    fallback: qwen3.5:9b
   frontend:
     triggers: [ui, ux, component, page, vue, react, responsive]
   backend:
