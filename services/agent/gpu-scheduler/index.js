@@ -93,23 +93,54 @@ const MODELS = {
   [M_CPU]:      { vram: 0,             quality: 1, maxAgents:8, thinking:false, minScore: 0 },
 };
 
-// All specialist roles share the same model preferences
+// ── Per-role model preferences ──────────────────────────────────────────────
+// Each specialist has a preferred model (first in list) + fallbacks.
+// Override any role via MODEL_<ROLE> env var (e.g. MODEL_SECURITY=qwen3.5:27b-q3_k_m)
 const SPECIALIST_ROLES = [
   'architect','frontend','backend','fullstack','devops','security','qa','doc',
   'marketing','design','product','bizdev',
 ];
 
+// Default model per role family:
+//   Reasoning-heavy (architect, security) → start at COMPLEX
+//   Code-heavy (fullstack, backend, frontend, devops, qa) → start at STANDARD
+//   Writing-heavy (doc, marketing, design, product, bizdev) → mistral or LIGHT
+const M_MISTRAL = process.env.MODEL_WRITING || 'mistral:7b';
+
+const ROLE_DEFAULTS = {
+  // Reasoning
+  architect:  [M_COMPLEX,  M_STANDARD, M_LIGHT],
+  security:   [M_COMPLEX,  M_STANDARD, M_LIGHT],
+  // Code
+  fullstack:  [M_STANDARD, M_LIGHT,    M_TRIVIAL],
+  backend:    [M_STANDARD, M_LIGHT,    M_TRIVIAL],
+  frontend:   [M_STANDARD, M_LIGHT,    M_TRIVIAL],
+  devops:     [M_STANDARD, M_LIGHT,    M_TRIVIAL],
+  qa:         [M_STANDARD, M_LIGHT,    M_TRIVIAL],
+  // Writing
+  doc:        [M_MISTRAL,  M_LIGHT,    M_TRIVIAL],
+  marketing:  [M_MISTRAL,  M_LIGHT,    M_TRIVIAL],
+  design:     [M_MISTRAL,  M_LIGHT,    M_TRIVIAL],
+  product:    [M_MISTRAL,  M_LIGHT,    M_TRIVIAL],
+  bizdev:     [M_MISTRAL,  M_LIGHT,    M_TRIVIAL],
+};
+
 const MODEL_PREFS = {
   chat:  [M_COMPLEX, M_STANDARD, M_LIGHT, M_TRIVIAL],
   audit: [M_STANDARD, M_LIGHT, M_TRIVIAL],
 };
-// Inject all specialist roles with the same list
+
+// Build per-role prefs with env var override support
 for (const role of SPECIALIST_ROLES) {
-  MODEL_PREFS[role] = [M_COMPLEX, M_STANDARD, M_LIGHT, M_TRIVIAL];
+  const envModel = process.env[`MODEL_${role.toUpperCase()}`];
+  if (envModel) {
+    // Env var override: use that model first, then standard fallback chain
+    MODEL_PREFS[role] = [envModel, M_STANDARD, M_LIGHT, M_TRIVIAL];
+  } else {
+    MODEL_PREFS[role] = ROLE_DEFAULTS[role] || [M_STANDARD, M_LIGHT, M_TRIVIAL];
+  }
 }
-// Compat legacy
 MODEL_PREFS.dev = MODEL_PREFS.frontend;
-MODEL_PREFS.qa  = [M_STANDARD, M_LIGHT, M_TRIVIAL];
 
 // Upgrade/downgrade paths — built dynamically
 const MODEL_UPGRADE = {

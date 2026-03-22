@@ -149,11 +149,28 @@ async function readRulesYaml(repo) {
     const requireAll = !/require_all:\s*false/.test(content);
     const maxRetries = (content.match(/max_retries:\s*(\d+)/) || [])[1];
     const retryUpgrade = !/retry_upgrade:\s*false/.test(content);
+    // Parse per-specialist model overrides
+    const specialistModels = {};
+    const specSections = content.split(/\n  (\w+):\s*\n/);
+    for (let i = 1; i < specSections.length; i += 2) {
+      const name = specSections[i];
+      const block = specSections[i + 1] || '';
+      const modelMatch = block.match(/model:\s*(\S+)/);
+      const fallbackMatch = block.match(/fallback:\s*(\S+)/);
+      if (modelMatch && SPECIALISTS.includes(name)) {
+        specialistModels[name] = {
+          model: modelMatch[1].replace(/['"]/g, ''),
+          fallback: fallbackMatch ? fallbackMatch[1].replace(/['"]/g, '') : null,
+        };
+      }
+    }
+
     return {
       gates: gates.length ? gates : ['fullstack'],
       requireAll,
       maxRetries: maxRetries ? parseInt(maxRetries) : MAX_RETRIES,
       retryUpgrade,
+      specialistModels,
     };
   } catch {
     return null;
@@ -321,6 +338,8 @@ async function startPipeline(repo, issueId, opts = {}) {
     stopped: false,
     maxRetries: rules?.maxRetries || MAX_RETRIES,
     retryUpgrade: rules?.retryUpgrade ?? RETRY_UPGRADE,
+    specialistModels: rules?.specialistModels || {},
+    gitFlowTarget: rules?.targetBranch || 'main',
   };
   setPipeline(repo, issueId, pipeline);
 
@@ -349,8 +368,13 @@ async function runNextGate(repo, issueId) {
   const gate = pipeline.gates[pipeline.currentGate];
   log(`Gate ${pipeline.currentGate + 1}/${pipeline.gates.length}: ${gate} for ${repo}#${issueId}`);
 
+  // Resolve model for this specialist (rules.yaml > MODEL_<ROLE> env > default)
+  const specConfig = pipeline.specialistModels?.[gate];
+  const envModel = process.env[`MODEL_${gate.toUpperCase()}`];
+  const gateModel = envModel || specConfig?.model || undefined;
+
   try {
-    const containerId = spawnWorker(repo, issueId, gate, pipeline.branch);
+    const containerId = spawnWorker(repo, issueId, gate, pipeline.branch, { model: gateModel });
     setPipeline(repo, issueId, {
       ...pipeline,
       activeWorker: { role: gate, containerId: containerId.slice(0, 12), startedAt: new Date().toISOString() },

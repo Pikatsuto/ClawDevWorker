@@ -29,18 +29,85 @@ branch_cleanup:
     - "release/*"
     - "hotfix/*"
 
+# ── Specialist configuration ─────────────────────────────────────────────────
+#
+# Each specialist can have:
+#   triggers: keywords that route an issue to this specialist
+#   model:    preferred Ollama model (uses queue if VRAM busy)
+#   fallback: emergency model if preferred is unavailable AND queue is full
+#
+# Model selection rationale:
+#   - Code-heavy roles need strong code generation → qwen3.5 (large)
+#   - Reasoning-heavy roles need deep analysis → qwen3.5 (large, thinking mode)
+#   - Writing-heavy roles need natural prose → mistral (better at natural language)
+#   - Lightweight roles need speed over depth → smaller models
+#
+# Override per-project via MODEL_<ROLE> env var (e.g. MODEL_SECURITY=qwen3.5:27b-q3_k_m)
+
 specialists:
+
+  # ── Reasoning-heavy (complex analysis, architecture decisions) ──────────────
+
   architect:
     triggers: [architecture, adr, migration, refactoring, breaking change]
-  frontend:
-    triggers: [ui, ux, component, page, vue, react, responsive]
-  backend:
-    triggers: [api, endpoint, auth, database, migration, sql, cache]
-  devops:
-    triggers: [docker, ci, cd, deploy, monitoring]
+    model: qwen3.5:27b-q3_k_m    # deep reasoning, system design, thinking mode
+    fallback: qwen3.5:9b
+
   security:
     triggers: [security, injection, xss, csrf, auth, login, password, token]
+    model: qwen3.5:27b-q3_k_m    # adversarial analysis needs strongest reasoning
+    fallback: qwen3.5:9b
+
+  # ── Code-heavy (writing and editing code) ───────────────────────────────────
+
+  fullstack:
+    triggers: [feature, component, api, endpoint, page, integration]
+    model: qwen3.5:9b             # solid code generation, good balance
+    fallback: qwen3.5:4b
+
+  backend:
+    triggers: [api, endpoint, auth, database, migration, sql, cache]
+    model: qwen3.5:9b
+    fallback: qwen3.5:4b
+
+  frontend:
+    triggers: [ui, ux, component, page, vue, react, responsive]
+    model: qwen3.5:9b
+    fallback: qwen3.5:4b
+
+  devops:
+    triggers: [docker, ci, cd, deploy, monitoring]
+    model: qwen3.5:9b             # Dockerfiles, CI pipelines, infra as code
+    fallback: qwen3.5:4b
+
   qa:
     triggers: [test, spec, e2e, coverage, regression, bug, fix]
+    model: qwen3.5:9b             # needs to understand code + write good tests
+    fallback: qwen3.5:4b
+
+  # ── Writing-heavy (natural language, prose, documentation) ──────────────────
+
   doc:
     triggers: [documentation, readme, jsdoc, changelog, guide]
+    model: mistral:7b             # better natural language and prose quality
+    fallback: qwen3.5:4b
+
+  marketing:
+    triggers: [seo, landing, conversion, copy, meta, og]
+    model: mistral:7b             # copywriting, SEO, natural tone
+    fallback: qwen3.5:4b
+
+  design:
+    triggers: [branding, color, typography, mockup, accessibility]
+    model: mistral:7b             # UX writing, design system descriptions
+    fallback: qwen3.5:4b
+
+  product:
+    triggers: [prd, user story, acceptance, roadmap, backlog]
+    model: mistral:7b             # requirements writing, clear specifications
+    fallback: qwen3.5:4b
+
+  bizdev:
+    triggers: [pricing, subscription, go-to-market, partnership]
+    model: mistral:7b             # business writing, proposals
+    fallback: qwen3.5:4b

@@ -75,7 +75,7 @@ model_exists() {
 # ─────────────────────────────────────────────────────────────────────────────
 wait_ollama "$OLLAMA_URL" "ollama-gpu"
 
-for model in qwen3.5:9b qwen3.5:4b qwen3.5:2b; do
+for model in qwen3.5:9b qwen3.5:4b qwen3.5:2b mistral:7b; do
   if model_exists "$OLLAMA_URL" "$model"; then
     ok "${model} already present — skip"
   else
