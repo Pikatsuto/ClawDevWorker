@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🌿","requires":{"bins":["git","curl","jq"],"en
 user-invocable: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # git-flow — Clean git flow
 
 ## Absolute rules

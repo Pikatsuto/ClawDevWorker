@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🔍","requires":{"bins":["node","git"]}}}
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # codebase-analyze — Incremental AST index
 
 ## Principle: git-diff based, never full-scan except on first run

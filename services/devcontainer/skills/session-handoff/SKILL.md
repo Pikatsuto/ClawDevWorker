@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🤝","requires":{"bins":["node","date"]}}}
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # session-handoff — Inter-environment Portability
 
 ## Commands

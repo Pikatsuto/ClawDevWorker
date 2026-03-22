@@ -6,6 +6,8 @@ user-invocable: true
 always: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # user-token — Developer's personal git token
 
 ## Why two tokens?

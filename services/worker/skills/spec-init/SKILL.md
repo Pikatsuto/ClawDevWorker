@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"📐","requires":{"bins":["git","node","curl","j
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # spec-init — From empty repo to autonomous pipeline
 
 ## Full flow

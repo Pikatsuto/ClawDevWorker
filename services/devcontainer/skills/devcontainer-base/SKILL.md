@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🖥️"}}
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # devcontainer — Ephemeral Code Server Dev Sessions
 
 ## Principle

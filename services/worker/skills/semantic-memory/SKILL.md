@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🧠","requires":{"bins":["node","sqlite3"]}}}
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # semantic-memory — Shared Project Memory
 
 ## Principle

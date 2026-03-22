@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🔁","always":true}}
 user-invocable: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # loop-detect — Automatic infinite loop detection
 
 ## Warning signals — you must stop if:

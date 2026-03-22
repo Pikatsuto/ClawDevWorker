@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gen-config.js — Génère openclaw.json pour le worker (11 rôles spécialistes)
+ * gen-config.js — Generates openclaw.json for the worker (11 specialist roles)
  */
 'use strict';
 
@@ -29,7 +29,7 @@ const stagedMode     = process.env.STAGED_MODE        !== 'false'; // false = he
 const repoName       = repo.split('/')[1]             || 'repo';
 const repoWorkspace  = `/workspace/${repoName}`;
 
-// ── System prompt depuis le fichier spécialiste ───────────────────────────────
+// ── System prompt from specialist file ────────────────────────────────────────
 
 const SPECIALISTS_DIR = '/opt/specialists';
 const SPECIALIST_ROLES = [
@@ -42,47 +42,47 @@ function loadSpecialistPrompt(r) {
   if (fs.existsSync(filePath)) {
     return fs.readFileSync(filePath, 'utf8');
   }
-  // Fallback générique
-  return `Tu es un agent spécialiste "${r}" autonome sur le repo ${repo}.
-Tu travailles sur l'issue #${issueId} : "${issueTitle}".
-Applique ton expertise de ${r} pour résoudre cette issue selon les règles du projet.
-Ne merge jamais une PR. Committe atomiquement. Ouvre des PRs vers ${parentBranch}.`;
+  // Generic fallback
+  return `You are an autonomous "${r}" specialist agent on the repo ${repo}.
+You are working on issue #${issueId}: "${issueTitle}".
+Apply your ${r} expertise to resolve this issue according to the project rules.
+Never merge a PR. Commit atomically. Open PRs towards ${parentBranch}.`;
 }
 
 const baseContext = `
-# Contexte de la mission
-Repo : ${repo}
-Issue : #${issueId} — ${issueTitle}
-Branche principale : ${parentBranch}
-${structured ? `\n# Analyse structurée\n${structured}` : ''}
-${bmad ? `\n# Contexte projet (BMAD)\n${bmad}` : ''}
+# Mission context
+Repo: ${repo}
+Issue: #${issueId} — ${issueTitle}
+Main branch: ${parentBranch}
+${structured ? `\n# Structured analysis\n${structured}` : ''}
+${bmad ? `\n# Project context (BMAD)\n${bmad}` : ''}
 
 # Issue #${issueId}
 ${issueTitle}
 
 ${issueBody}
 
-# Git flow OBLIGATOIRE
-- Branches typées : feat/${issueId}-nom, fix/${issueId}-nom, refactor/${issueId}-nom, test/${issueId}-nom, docs/${issueId}-nom
-- 1 commit = 1 changement logique, message conventionnel (feat:, fix:, refactor:, test:, docs:)
-- git add sur fichiers précis, jamais git add .
-- PR vers ${parentBranch} avec "Part of #${issueId}"
-- PR principale : ${parentBranch} → main avec "Closes #${issueId}" en fin de mission
-- JAMAIS merger une PR
-- JAMAIS pousser sur main directement
-${!stagedMode ? '' : '\n# Mode staged\nTu travailles en mode staged — utilise le skill staged-diff pour tout changement de fichier.'}
+# MANDATORY git flow
+- Typed branches: feat/${issueId}-name, fix/${issueId}-name, refactor/${issueId}-name, test/${issueId}-name, docs/${issueId}-name
+- 1 commit = 1 logical change, conventional message (feat:, fix:, refactor:, test:, docs:)
+- git add on specific files, never git add .
+- PR towards ${parentBranch} with "Part of #${issueId}"
+- Main PR: ${parentBranch} → main with "Closes #${issueId}" at end of mission
+- NEVER merge a PR
+- NEVER push to main directly
+${!stagedMode ? '' : '\n# Staged mode\nYou are working in staged mode — use the staged-diff skill for all file changes.'}
 `;
 
 const specialistPrompt = loadSpecialistPrompt(role);
 const systemPrompt = `${specialistPrompt}\n\n${baseContext}`;
 
-// ── Outils autorisés par rôle ─────────────────────────────────────────────────
+// ── Allowed tools per role ────────────────────────────────────────────────────
 
 function getAllowedTools(r) {
   const readTools    = ['file.read', 'terminal', 'git', 'mcp-docs'];
   const writeTools   = ['file.write'];
   const devTools     = [...readTools, ...writeTools, 'docker-exec'];
-  const reviewTools  = [...readTools]; // lecture seule pour les reviewers
+  const reviewTools  = [...readTools]; // read-only for reviewers
 
   const toolMap = {
     architect:  reviewTools,
@@ -90,8 +90,8 @@ function getAllowedTools(r) {
     backend:    devTools,
     fullstack:  devTools,
     devops:     devTools,
-    security:   [...reviewTools, 'file.write'], // Security peut annoter
-    qa:         [...reviewTools, 'file.write'], // QA peut écrire des tests
+    security:   [...reviewTools, 'file.write'], // Security can annotate
+    qa:         [...reviewTools, 'file.write'], // QA can write tests
     doc:        [...readTools, 'file.write'],
     marketing:  reviewTools,
     design:     reviewTools,
@@ -128,7 +128,7 @@ function getEnabledSkills(r) {
   return skillMap[r] || devSkills;
 }
 
-// ── Config OpenClaw ───────────────────────────────────────────────────────────
+// ── OpenClaw Config ───────────────────────────────────────────────────────────
 
 const config = {
   gateway: {
@@ -211,4 +211,4 @@ const config = {
 const configFile = process.env.CONFIG_FILE;
 fs.mkdirSync(path.dirname(configFile), { recursive: true, mode: 0o700 });
 fs.writeFileSync(configFile, JSON.stringify(config, null, 2), { mode: 0o600 });
-console.log(`openclaw.json généré — rôle=${role} model=${ollamaModel} agent=${config.agents.list[0].id}`);
+console.log(`openclaw.json generated — role=${role} model=${ollamaModel} agent=${config.agents.list[0].id}`);

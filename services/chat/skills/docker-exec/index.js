@@ -1,15 +1,15 @@
 /**
  * docker-exec skill — OpenClaw plugin
  *
- * Expose la commande `exec_ephemeral` qui lance un container Docker éphémère
- * avec le code fourni, récupère stdout/stderr, et détruit le container.
+ * Exposes the `exec_ephemeral` command which launches an ephemeral Docker container
+ * with the provided code, captures stdout/stderr, and destroys the container.
  *
- * Sécurité :
- *   --rm            → détruit après exécution
- *   --network none  → aucun accès réseau
- *   --read-only     → filesystem en lecture seule (sauf /tmp)
- *   --memory / --cpus → limites de ressources
- *   timeout kill    → container tué si timeout dépassé
+ * Security:
+ *   --rm            → destroyed after execution
+ *   --network none  → no network access
+ *   --read-only     → read-only filesystem (except /tmp)
+ *   --memory / --cpus → resource limits
+ *   timeout kill    → container killed if timeout exceeded
  */
 
 const { execFile, spawn } = require('child_process');
@@ -24,7 +24,7 @@ const DOCKER  = process.env.DOCKER_HOST
   ? `DOCKER_HOST=${process.env.DOCKER_HOST}`
   : '';
 
-// Images autorisées (whitelist)
+// Allowed images (whitelist)
 const ALLOWED_IMAGES = new Set([
   'python:3.12-slim',
   'python:3.11-slim',
@@ -47,12 +47,12 @@ function runEphemeral({ image, command, code, language, timeout }) {
       return resolve({
         success: false,
         stdout: '',
-        stderr: `Image non autorisée : ${image}. Images disponibles : ${[...ALLOWED_IMAGES].join(', ')}`,
+        stderr: `Unauthorized image: ${image}. Available images: ${[...ALLOWED_IMAGES].join(', ')}`,
         exit_code: 1,
       });
     }
 
-    // Créer un fichier temporaire si du code est fourni
+    // Create a temporary file if code is provided
     let tmpFile = null;
     let dockerArgs = [
       'run', '--rm',
@@ -65,7 +65,7 @@ function runEphemeral({ image, command, code, language, timeout }) {
     ];
 
     if (code) {
-      // Détecter l'extension selon le langage ou l'image
+      // Detect extension based on language or image
       const ext = language
         ? { python: 'py', javascript: 'js', js: 'js', bash: 'sh', ruby: 'rb', go: 'go', rust: 'rs', php: 'php' }[language.toLowerCase()] || 'txt'
         : image.startsWith('python') ? 'py'
@@ -77,12 +77,12 @@ function runEphemeral({ image, command, code, language, timeout }) {
       tmpFile = path.join(os.tmpdir(), `ephemeral-${Date.now()}.${ext}`);
       fs.writeFileSync(tmpFile, code, 'utf8');
 
-      // Monter le fichier en lecture seule dans le container
+      // Mount the file as read-only in the container
       dockerArgs.push('-v', `${tmpFile}:/code/script.${ext}:ro`);
       dockerArgs.push('-w', '/code');
       dockerArgs.push(image);
 
-      // Commande d'exécution selon le langage
+      // Execution command based on language
       const runCmd = {
         py:  ['python', `script.${ext}`],
         js:  ['node', `script.${ext}`],
@@ -94,10 +94,10 @@ function runEphemeral({ image, command, code, language, timeout }) {
 
       dockerArgs.push(...runCmd);
     } else if (command) {
-      // Commande shell directe
+      // Direct shell command
       dockerArgs.push(image, 'sh', '-c', command);
     } else {
-      return resolve({ success: false, stdout: '', stderr: 'Fournir code ou command', exit_code: 1 });
+      return resolve({ success: false, stdout: '', stderr: 'Provide code or command', exit_code: 1 });
     }
 
     let stdout = '';
@@ -109,14 +109,14 @@ function runEphemeral({ image, command, code, language, timeout }) {
       timeout: TIMEOUT + 5000,
     });
 
-    // Récupérer l'ID du container pour le kill en cas de timeout
+    // Capture container ID for kill in case of timeout
     proc.stdout.on('data', d => { stdout += d.toString(); });
     proc.stderr.on('data', d => { stderr += d.toString(); });
 
-    // Timeout : killer le container
+    // Timeout: kill the container
     const timer = setTimeout(() => {
       proc.kill('SIGKILL');
-      stderr += `\n[docker-exec] Timeout dépassé (${TIMEOUT / 1000}s) — container tué`;
+      stderr += `\n[docker-exec] Timeout exceeded (${TIMEOUT / 1000}s) — container killed`;
     }, TIMEOUT);
 
     proc.on('close', (code) => {
@@ -126,7 +126,7 @@ function runEphemeral({ image, command, code, language, timeout }) {
       }
       resolve({
         success: code === 0,
-        stdout: stdout.slice(0, 8192),  // max 8KB de sortie
+        stdout: stdout.slice(0, 8192),  // max 8KB output
         stderr: stderr.slice(0, 2048),
         exit_code: code,
         image,
@@ -146,29 +146,29 @@ function runEphemeral({ image, command, code, language, timeout }) {
 // ── Export OpenClaw skill ─────────────────────────────────────────────────────
 module.exports = {
   name: 'docker-exec',
-  description: 'Exécute du code dans un container Docker éphémère isolé (--network none, --rm)',
+  description: 'Executes code in an isolated ephemeral Docker container (--network none, --rm)',
   commands: {
     exec_ephemeral: {
-      description: 'Exécuter du code ou une commande dans un container éphémère',
+      description: 'Execute code or a command in an ephemeral container',
       parameters: {
         image: {
           type: 'string',
-          description: `Image Docker à utiliser. Disponibles : ${[...ALLOWED_IMAGES].join(', ')}`,
+          description: `Docker image to use. Available: ${[...ALLOWED_IMAGES].join(', ')}`,
           required: true,
         },
         code: {
           type: 'string',
-          description: 'Code source à exécuter (fichier temporaire monté en lecture seule)',
+          description: 'Source code to execute (temporary file mounted as read-only)',
           required: false,
         },
         command: {
           type: 'string',
-          description: 'Commande shell à exécuter directement (alternative à code)',
+          description: 'Shell command to execute directly (alternative to code)',
           required: false,
         },
         language: {
           type: 'string',
-          description: 'Langage du code (python, javascript, bash, ruby, go, php) — auto-détecté si absent',
+          description: 'Code language (python, javascript, bash, ruby, go, php) — auto-detected if absent',
           required: false,
         },
       },

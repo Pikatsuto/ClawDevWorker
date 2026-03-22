@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
- * stream-proxy.js — Proxy Ollama intelligent pour openclaw-chat et cdw-vscode
+ * stream-proxy.js — Intelligent Ollama proxy for openclaw-chat and cdw-vscode
  *
- * Rôle :
- *   1. Avant chaque requête /api/chat → appelle /chat/request sur le scheduler
- *      qui sélectionne le meilleur modèle disponible selon le score de complexité
- *      (réutilisation slot > n+1 opportuniste > chargement > fallback CPU)
- *   2. Stream la réponse vers le client
- *   3. Ping /human/heartbeat à chaque chunk SSE reçu → reset timer idle 15min
- *   4. Ping /human/token-end à la fin de chaque chunk → bascule surface si préemption
- *   5. Si fallback CPU → headers X-Fallback-CPU + X-Fallback-Model pour l'UI
- *   6. POST /cancel-and-wait → annule le stream CPU en cours, met la requête
- *      en attente du prochain slot GPU, répond via SSE quand dispo
- *   7. VSCode fan-out : détecte les patterns parallélisables, appelle /chat/fanout
- *      sur le scheduler, exécute les sous-tâches en parallèle, agrège en fan-in
+ * Role:
+ *   1. Before each /api/chat request → calls /chat/request on the scheduler
+ *      which selects the best available model based on the complexity score
+ *      (slot reuse > opportunistic n+1 > loading > CPU fallback)
+ *   2. Streams the response to the client
+ *   3. Pings /human/heartbeat on each SSE chunk received → resets 15min idle timer
+ *   4. Pings /human/token-end at the end of each chunk → switches surface if preemption pending
+ *   5. If CPU fallback → X-Fallback-CPU + X-Fallback-Model headers for the UI
+ *   6. POST /cancel-and-wait → cancels the current CPU stream, puts the request
+ *      on hold for the next GPU slot, responds via SSE when available
+ *   7. VSCode fan-out: detects parallelizable patterns, calls /chat/fanout
+ *      on the scheduler, executes subtasks in parallel, aggregates in fan-in
  *
- * Variables d'env :
+ * Environment variables:
  *   SURFACE            — 'chat' | 'vscode'
  *   SCHEDULER_URL      — http://openclaw-agent:7070
  *   PROXY_PORT         — 11435
@@ -31,27 +31,27 @@ const SCHEDULER_URL      = process.env.SCHEDULER_URL      || 'http://openclaw-ag
 const PROXY_PORT         = parseInt(process.env.PROXY_PORT || '11435');
 const CPU_FALLBACK_MODEL = process.env.CPU_FALLBACK_MODEL  || 'qwen3.5:0.8b';
 
-// ── Mots-clés séquentiels — désactivent le fan-out ───────────────────────────
+// ── Sequential keywords — disable fan-out ────────────────────────────────────
 const SEQ_KW = [
-  "séquentiellement","dans l'ordre","d'abord","puis ensuite","étape par étape",
-  "step by step","sequentially","in order","one by one","un par un",
-  "d'abord puis","first then",
+  "sequentially","in order","first","then next","step by step",
+  "step by step","sequentially","in order","one by one","one by one",
+  "first then","first then",
 ];
 
-// ── Patterns parallélisables ──────────────────────────────────────────────────
+// ── Parallelizable patterns ──────────────────────────────────────────────────
 const PARALLEL_RE = [
-  /refactorise?\s+(ces\s+)?\d+\s+fichiers?/i,
-  /pour\s+(chaque|chacun|tous\s+les)\s+fichiers?/i,
-  /analyse?\s+(ces|les)\s+(\d+|plusieurs)\s+fichiers?/i,
-  /génère?\s+des\s+tests\s+pour/i,
-  /ajoute?\s+des\s+commentaires?\s+(dans|sur|pour)/i,
-  /applique?\s+.+\s+à\s+(chaque|tous)/i,
+  /refactor\s+(these\s+)?\d+\s+files?/i,
+  /for\s+(each|every|all(\s+the)?)\s+files?/i,
+  /analyze?\s+(these|the)\s+(\d+|several)\s+files?/i,
+  /generate\s+tests\s+for/i,
+  /add\s+comments?\s+(in|on|for)/i,
+  /apply\s+.+\s+to\s+(each|all)/i,
   /for\s+each\s+(of\s+these\s+)?files?/i,
   /in\s+each\s+of\s+these/i,
   /update\s+(all|each|every)\s+files?/i,
 ];
 
-// ── File patterns pour extraction ─────────────────────────────────────────────
+// ── File patterns for extraction ─────────────────────────────────────────────
 const FILE_RE = [
   /`([^`]+\.(?:js|ts|py|vue|jsx|tsx|css|scss|go|rs|java|php|rb|c|cpp|h))`/g,
   /"([^"]+\.(?:js|ts|py|vue|jsx|tsx|css|scss|go|rs|java|php|rb|c|cpp|h))"/g,
@@ -83,14 +83,14 @@ function schedulerReq(method, path, body=null) {
   });
 }
 
-// fire-and-forget pour les heartbeats dans le chemin chaud du stream
+// fire-and-forget for heartbeats in the hot path of the stream
 function heartbeat()   { schedulerReq('POST','/human/heartbeat',{surface:SURFACE}).catch(()=>{}); }
 function tokenEnd()    { schedulerReq('POST','/human/token-end').catch(()=>{}); }
 function releaseSlot(slotId) {
   if (slotId) schedulerReq('POST','/chat/release',{slotId}).catch(()=>{});
 }
 
-// ── Détection fan-out VSCode ──────────────────────────────────────────────────
+// ── VSCode fan-out detection ─────────────────────────────────────────────────
 
 function detectFanout(messages) {
   if (SURFACE !== 'vscode') return null;
@@ -102,13 +102,13 @@ function detectFanout(messages) {
     ? lastUser.content
     : (lastUser.content||[]).map(c=>c.text||'').join(' ');
 
-  // Séquentiel explicite → pas de fan-out
+  // Explicit sequential → no fan-out
   if (SEQ_KW.some(kw=>content.toLowerCase().includes(kw))) return null;
 
-  // Pattern parallélisable ?
+  // Parallelizable pattern?
   if (!PARALLEL_RE.some(p=>p.test(content))) return null;
 
-  // Extraction des fichiers mentionnés
+  // Extract mentioned files
   const files = new Set();
   for (const pattern of FILE_RE) {
     pattern.lastIndex = 0;
@@ -117,7 +117,7 @@ function detectFanout(messages) {
   }
 
   if (files.size < 2) return null;
-  log(`Fan-out détecté: ${files.size} fichiers → ${[...files].join(', ')}`);
+  log(`Fan-out detected: ${files.size} files → ${[...files].join(', ')}`);
 
   return [...files].map((file,i) => ({
     file,
@@ -125,15 +125,15 @@ function detectFanout(messages) {
     messages: [
       ...messages.slice(0,-1),
       { role:'user', content: content.replace(
-          /ces\s+\d+\s+fichiers?|chaque\s+fichier|tous\s+les\s+fichiers?/gi,
-          `le fichier \`${file}\``
+          /these\s+\d+\s+files?|each\s+file|all(\s+the)?\s+files?/gi,
+          `the file \`${file}\``
         )
       },
     ],
   }));
 }
 
-// ── Proxy stream vers Ollama ──────────────────────────────────────────────────
+// ── Proxy stream to Ollama ───────────────────────────────────────────────────
 
 function proxyStream({ollamaUrl, model, reqBody, clientRes, isFallback, slotId}) {
   return new Promise((resolve, reject) => {
@@ -143,7 +143,7 @@ function proxyStream({ollamaUrl, model, reqBody, clientRes, isFallback, slotId})
     if (isFallback) {
       clientRes.setHeader('X-Fallback-CPU',   'true');
       clientRes.setHeader('X-Fallback-Model', model);
-      // Le client peut appeler POST /cancel-and-wait pour annuler et attendre GPU
+      // The client can call POST /cancel-and-wait to cancel and wait for GPU
       clientRes.setHeader('X-Cancel-Wait-Url', `http://localhost:${PROXY_PORT}/cancel-and-wait`);
     }
     clientRes.setHeader('Content-Type','application/x-ndjson');
@@ -157,9 +157,9 @@ function proxyStream({ollamaUrl, model, reqBody, clientRes, isFallback, slotId})
 
     const ollamaReq = http.request(opts, ollamaRes => {
       ollamaRes.on('data', chunk => {
-        heartbeat();          // reset timer idle à chaque token
+        heartbeat();          // reset idle timer on each token
         clientRes.write(chunk);
-        tokenEnd();           // bascule surface si préemption en attente
+        tokenEnd();           // switch surface if preemption pending
       });
       ollamaRes.on('end',  () => { releaseSlot(slotId); clientRes.end(); resolve(); });
       ollamaRes.on('error', e => { releaseSlot(slotId); reject(e); });
@@ -174,14 +174,14 @@ function proxyStream({ollamaUrl, model, reqBody, clientRes, isFallback, slotId})
 // ── Fan-in VSCode ─────────────────────────────────────────────────────────────
 
 async function handleFanout({subtasksSpec, reqBody, schedulerSlots, clientRes}) {
-  log(`Fan-in: ${subtasksSpec.length} sous-tâches`);
+  log(`Fan-in: ${subtasksSpec.length} subtasks`);
 
   clientRes.setHeader('Content-Type','application/json');
   clientRes.setHeader('X-Fanout','true');
   clientRes.setHeader('X-Fanout-Count', String(subtasksSpec.length));
   if (!clientRes.headersSent) clientRes.writeHead(200);
 
-  // Exécute toutes les sous-tâches en parallèle (non-stream pour agrégation)
+  // Execute all subtasks in parallel (non-stream for aggregation)
   const results = await Promise.allSettled(
     subtasksSpec.map(async (sub, i) => {
       const slot     = schedulerSlots[i];
@@ -218,11 +218,11 @@ async function handleFanout({subtasksSpec, reqBody, schedulerSlots, clientRes}) 
   const aggregated = results.map((r,i) => {
     const file = subtasksSpec[i].file;
     if (r.status==='fulfilled') return `### \`${file}\`\n\n${r.value.content}`;
-    return `### \`${file}\`\n\n❌ Erreur: ${r.reason?.message||'inconnue'}`;
+    return `### \`${file}\`\n\n❌ Error: ${r.reason?.message||'unknown'}`;
   }).join('\n\n---\n\n');
 
   const ok = results.filter(r=>r.status==='fulfilled').length;
-  log(`Fan-in terminé: ${ok}/${results.length} succès`);
+  log(`Fan-in complete: ${ok}/${results.length} succeeded`);
 
   clientRes.end(JSON.stringify({
     model: reqBody.model, done:true, fanout:true, subtasks:subtasksSpec.length,
@@ -233,7 +233,7 @@ async function handleFanout({subtasksSpec, reqBody, schedulerSlots, clientRes}) 
 // ── Pending GPU-wait ──────────────────────────────────────────────────────────
 const pendingGpuWait = new Map();
 
-// ── State session locale ──────────────────────────────────────────────────────
+// ── Local session state ──────────────────────────────────────────────────────
 let localSessionId   = null;
 const SESSION_IDLE_MS = parseInt(process.env.HUMAN_IDLE_CHAT_MS || '900000');
 let sessionIdleTimer  = null;
@@ -242,7 +242,7 @@ function resetSessionIdle() {
   clearTimeout(sessionIdleTimer);
   sessionIdleTimer = setTimeout(async () => {
     if (localSessionId) {
-      log(`Session ${localSessionId} expirée (idle) — release`);
+      log(`Session ${localSessionId} expired (idle) — release`);
       await schedulerReq('POST','/chat/session/release',{sessionId:localSessionId});
       localSessionId = null;
     }
@@ -255,8 +255,8 @@ function getOrInitSessionId() {
   return localSessionId;
 }
 
-// Injecte une proposition upgrade/downgrade comme chunk NDJSON spécial
-// OpenClaw/cpu-status skill intercepte type='session_proposal' et affiche le bandeau
+// Inject an upgrade/downgrade proposal as a special NDJSON chunk
+// OpenClaw/cpu-status skill intercepts type='session_proposal' and displays the banner
 function sendSessionProposal(clientRes, proposal) {
   const chunk = JSON.stringify({
     type:        'session_proposal',
@@ -273,7 +273,7 @@ function sendSessionProposal(clientRes, proposal) {
   clientRes.write(chunk + '\n');
 }
 
-// ── Serveur HTTP ──────────────────────────────────────────────────────────────
+// ── HTTP Server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(async(req, res) => {
   const urlPath = req.url.split('?')[0];
@@ -285,13 +285,13 @@ const server = http.createServer(async(req, res) => {
     return;
   }
 
-  // POST /session/confirm — confirmation upgrade ou downgrade par l'utilisateur
+  // POST /session/confirm — user confirmation of upgrade or downgrade
   if (req.method==='POST'&&urlPath==='/session/confirm') {
     const body = await readBody(req);
     const {direction} = body; // 'upgrade' | 'downgrade'
     if (!localSessionId||!direction) {
       res.writeHead(400,'Content-Type','application/json');
-      res.end(JSON.stringify({error:'sessionId ou direction manquant'}));
+      res.end(JSON.stringify({error:'sessionId or direction missing'}));
       return;
     }
     const result = await schedulerReq('POST','/chat/session/confirm',{sessionId:localSessionId, direction});
@@ -323,7 +323,7 @@ const server = http.createServer(async(req, res) => {
     return;
   }
 
-  // Proxy transparent pour toutes les routes sauf /api/chat
+  // Transparent proxy for all routes except /api/chat
   if (req.method!=='POST'||urlPath!=='/api/chat') {
     const body    = await readBody(req);
     const payload = body ? JSON.stringify(body) : null;
@@ -369,44 +369,44 @@ const server = http.createServer(async(req, res) => {
         await handleFanout({subtasksSpec:subtasks, reqBody, schedulerSlots:fanoutRes.subtasks, clientRes:res});
         return;
       }
-      log('Fan-out: scheduler indisponible → mode normal','WARN');
+      log('Fan-out: scheduler unavailable → normal mode','WARN');
     }
   }
 
-  // ── Session lock (premier message) ou score + streak (suivants) ────────────
+  // ── Session lock (first message) or score + streak (subsequent) ────────────
   const statusRes     = await schedulerReq('GET','/status');
   const knownSessions = statusRes?.sessionModels || [];
   const isNewSession  = !knownSessions.find(s=>s.sessionId===sessionId);
 
   let sessionInfo;
   if (isNewSession) {
-    // Premier message → lock le modèle pour la session
+    // First message → lock the model for the session
     sessionInfo = await schedulerReq('POST','/chat/session/lock',{sessionId, surface:SURFACE, messages});
-    log(`Session lockée: ${sessionId} → ${sessionInfo?.modelId}`);
+    log(`Session locked: ${sessionId} → ${sessionInfo?.modelId}`);
   } else {
-    // Messages suivants → évaluation streak upgrade/downgrade
+    // Subsequent messages → streak upgrade/downgrade evaluation
     sessionInfo = await schedulerReq('POST','/chat/session/score',{sessionId, surface:SURFACE, messages});
-    // Proposition → chunk spécial avant le stream, stream continue avec modèle actuel
+    // Proposal → special chunk before the stream, stream continues with current model
     if (sessionInfo?.action==='upgrade'||sessionInfo?.action==='downgrade') {
-      log(`Proposition ${sessionInfo.action} → ${sessionInfo.targetModel} (streak)`);
+      log(`Proposal ${sessionInfo.action} → ${sessionInfo.targetModel} (streak)`);
       sendSessionProposal(res, sessionInfo);
     }
   }
 
-  // Dispatch : alloue un slot sur le modèle déjà locké par la session
+  // Dispatch: allocate a slot on the model already locked by the session
   const model     = sessionInfo?.modelId   || reqBody.model || 'qwen3.5:4b';
   const ollamaUrl = sessionInfo?.ollamaUrl || 'http://ollama:11434';
   const isFallback= !!sessionInfo?.fallback;
 
-  // Alloue le slot chat (libéré à la fin du stream)
+  // Allocate the chat slot (released at the end of the stream)
   const slotRes = await schedulerReq('POST','/chat/request',{
     messages, surface:SURFACE,
     requestId:  `req-${Date.now()}`,
-    forceModel: model,         // scheduler utilise ce modèle, pas recalcul
+    forceModel: model,         // scheduler uses this model, no recalculation
   });
   const slotId = slotRes?.slotId || null;
 
-  log(`Requête: model=${model} fallback=${isFallback} slotId=${slotId} session=${sessionId}`);
+  log(`Request: model=${model} fallback=${isFallback} slotId=${slotId} session=${sessionId}`);
 
   const finalBody = isFallback
     ? {...reqBody, options:{...(reqBody.options||{}), num_gpu:0, num_predict:reqBody.options?.num_predict||512}}
@@ -414,7 +414,7 @@ const server = http.createServer(async(req, res) => {
 
   await proxyStream({ollamaUrl, model, reqBody:finalBody, clientRes:res, isFallback, slotId})
     .catch(e => {
-      log(`Erreur proxy: ${e.message}`,'WARN');
+      log(`Proxy error: ${e.message}`,'WARN');
       if (!res.headersSent) { res.writeHead(502); res.end(); }
     });
 });
@@ -428,14 +428,14 @@ function readBody(req) {
   });
 }
 
-// ── Démarrage ─────────────────────────────────────────────────────────────────
+// ── Startup ──────────────────────────────────────────────────────────────────
 
 server.listen(PROXY_PORT,'0.0.0.0',()=>{
-  log(`Démarré sur :${PROXY_PORT}`);
+  log(`Started on :${PROXY_PORT}`);
   log(`Surface: ${SURFACE} | Scheduler: ${SCHEDULER_URL}`);
-  log(`Session lock: premier message → modèle locké pour la durée de la session`);
-  log(`Streak: upgrade proposé si score > minScore+${process.env.UPGRADE_THRESHOLD||30}, downgrade après 3 messages bas`);
-  if (SURFACE==='vscode') log('Fan-out automatique activé (patterns parallélisables)');
+  log(`Session lock: first message → model locked for the duration of the session`);
+  log(`Streak: upgrade proposed if score > minScore+${process.env.UPGRADE_THRESHOLD||30}, downgrade after 3 low messages`);
+  if (SURFACE==='vscode') log('Automatic fan-out enabled (parallelizable patterns)');
 });
 
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));

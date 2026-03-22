@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * orchestrator/index.js — Plugin OpenClaw multi-agent v2
+ * orchestrator/index.js — OpenClaw multi-agent plugin v2
  *
- * Expose 4 outils à l'agent OpenClaw :
- *   task_pickup      → prendre une issue, réserver GPU, spawner worker spécialiste
- *   task_complete    → terminer une tâche (done/pass/fail/refine)
- *   queue_status     → état de la queue et des workers actifs
- *   session_health   → détecter et corriger les incohérences d'état
+ * Exposes 4 tools to the OpenClaw agent:
+ *   task_pickup      → pick an issue, reserve GPU, spawn specialist worker
+ *   task_complete    → finish a task (done/pass/fail/refine)
+ *   queue_status     → queue state and active workers
+ *   session_health   → detect and correct state inconsistencies
  *
- * Pipeline RBAC configurable par projet (.coderclaw/rules.yaml dans le repo) :
+ * Per-project configurable RBAC pipeline (.coderclaw/rules.yaml in repo):
  *   gates: [architect, frontend, marketing, qa, doc]
  *   require_all: true
  *
- * Routing spécialistes :
- *   1. Labels git (override manuel)
- *   2. CPU analyse l'issue → détermine le(s) spécialiste(s)
+ * Specialist routing:
+ *   1. Git labels (manual override)
+ *   2. CPU analyzes the issue → determines required specialist(s)
  *
- * Support simultané Forgejo + GitHub via git-provider abstraction.
+ * Simultaneous Forgejo + GitHub support via git-provider abstraction.
  */
 
 'use strict';
@@ -37,20 +37,20 @@ const AUDIT_FILE        = path.join(MEMORY_DIR, 'audit.log');
 const WORKER_IMAGE      = process.env.WORKER_IMAGE      || 'ghcr.io/pikatsuto/cdw-worker:latest';
 const WORKER_MEMORY     = process.env.WORKER_MEMORY     || '2g';
 
-// POST /webhook          → événements Forgejo/GitHub
-// POST /scheduler-event  → événements internes GPU scheduler
+// POST /webhook          → Forgejo/GitHub events
+// POST /scheduler-event  → internal GPU scheduler events
 // GET  /health, /healthz → healthcheck
 
 const ORCHESTRATOR_PORT = parseInt(process.env.ORCHESTRATOR_PORT || '9001');
 
-// Git providers chargés au démarrage
+// Git providers loaded at startup
 let gitProviders;
 try {
   const gp = require('/opt/git-provider/index.js');
   gitProviders = gp.loadProviders();
-  log(`Git providers chargés : ${gitProviders.size}`);
+  log(`Git providers loaded: ${gitProviders.size}`);
 } catch(e) {
-  log(`Git provider non disponible : ${e.message}`, 'WARN');
+  log(`Git provider not available: ${e.message}`, 'WARN');
   gitProviders = new Map();
 }
 
@@ -72,34 +72,34 @@ function readRawBody(req) {
 
 const server = http.createServer(async (req, res) => {
 
-  // ── Webhook Forgejo / GitHub ───────────────────────────────────────────────
+  // ── Forgejo / GitHub webhook ───────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/webhook') {
     const rawBody = await readRawBody(req);
     let body;
     try { body = JSON.parse(rawBody); } catch { body = {}; }
 
-    // Détection provider
+    // Provider detection
     let provider = null;
     if (gitProviders.size > 0) {
       const { detectProvider } = require('/opt/git-provider/index.js');
       const info = detectProvider(req, gitProviders);
       if (info) {
         provider = info.provider;
-        // Vérification signature
+        // Signature verification
         const sig = req.headers['x-hub-signature-256'] || req.headers['x-gitea-signature'] || '';
         if (sig && !provider.verifyWebhook(rawBody, sig)) {
-          log('Signature webhook invalide', 'WARN');
+          log('Invalid webhook signature', 'WARN');
           res.writeHead(403); res.end('Invalid signature'); return;
         }
       }
     }
 
-    // Parsing de l'événement (Forgejo ou GitHub selon les headers)
+    // Event parsing (Forgejo or GitHub depending on headers)
     let event;
     if (provider) {
       event = provider.parseWebhook(req.headers, body);
     } else {
-      // Fallback : parsing manuel
+      // Fallback: manual parsing
       const gitEvent = req.headers['x-gitea-event'] || req.headers['x-forgejo-event'] || req.headers['x-github-event'] || '';
       event = {
         type:    gitEvent === 'issues' && body.action === 'assigned' ? 'issue.assigned' : `${gitEvent}.${body.action}`,
@@ -116,7 +116,7 @@ const server = http.createServer(async (req, res) => {
 
     log(`Webhook ${event.type} repo=${event.repo}`);
 
-    // ── Issue assignée au compte agent → démarrer pipeline ─────────────────
+    // ── Issue assigned to agent account → start pipeline ────────────────────
     if (event.type === 'issue.assigned' && event.issue && event.repo) {
       const agentLogin = process.env.AGENT_GIT_LOGIN || 'agent';
       if (event.issue.assignee !== agentLogin) {
@@ -128,16 +128,16 @@ const server = http.createServer(async (req, res) => {
       );
       if (!alreadyActive) {
         task_pickup({ repo: event.repo, issueId: event.issue.id })
-          .then(r => log(`Pipeline démarré: ${event.repo}#${event.issue.id}`))
+          .then(r => log(`Pipeline started: ${event.repo}#${event.issue.id}`))
           .catch(e => {
-            log(`Erreur pipeline: ${e.message}`, 'WARN');
+            log(`Pipeline error: ${e.message}`, 'WARN');
             if (provider) provider.addComment(event.repo, event.issue.id,
-              `⚠️ Erreur démarrage pipeline: ${e.message}`).catch(() => {});
+              `⚠️ Pipeline start error: ${e.message}`).catch(() => {});
           });
       }
     }
 
-    // ── Commentaire /retry → relancer le pipeline ───────────────────────────
+    // ── /retry comment → restart the pipeline ───────────────────────────────
     if (event.type === 'comment' && event.comment?.body?.trim() === '/retry' && event.repo) {
       const issueId = event.issueId;
       if (issueId) {
@@ -145,12 +145,12 @@ const server = http.createServer(async (req, res) => {
         task_pickup({ repo: event.repo, issueId })
           .catch(e => {
             if (provider) provider.addComment(event.repo, issueId,
-              `⚠️ Retry échoué: ${e.message}`).catch(() => {});
+              `⚠️ Retry failed: ${e.message}`).catch(() => {});
           });
       }
     }
 
-    // ── PR ouverte avec label gate:xxx → déclencher ce gate ────────────────
+    // ── PR opened with gate:xxx label → trigger that gate ──────────────────
     if ((event.type === 'pr.opened' || event.type === 'pr.synchronize') && event.pr && event.repo) {
       const gateLabel = (event.pr.labels || []).find(l => l.startsWith('gate:'));
       if (gateLabel) {
@@ -158,7 +158,7 @@ const server = http.createServer(async (req, res) => {
         const issueM   = (event.pr.body || '').match(/#(\d+)/);
         if (issueM && SPECIALISTS.includes(gate)) {
           task_pickup({ repo: event.repo, issueId: parseInt(issueM[1]), role: gate })
-            .catch(e => log(`Erreur gate PR: ${e.message}`, 'WARN'));
+            .catch(e => log(`PR gate error: ${e.message}`, 'WARN'));
         }
       }
     }
@@ -173,17 +173,17 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const { repo, issueId, deps } = body;
     if (!repo || !issueId || !Array.isArray(deps)) {
-      res.writeHead(400); res.end('repo, issueId, deps[] requis'); return;
+      res.writeHead(400); res.end('repo, issueId, deps[] required'); return;
     }
     registerDeps(repo, issueId, deps);
-    log(`DAG: #${issueId} sur ${repo} → dépend de [${deps.join(', ')}]`);
+    log(`DAG: #${issueId} on ${repo} → depends on [${deps.join(', ')}]`);
     audit('deps_registered', { repo, issueId, deps });
     res.writeHead(200); res.end(JSON.stringify({ ok: true, issueId, deps }));
     return;
   }
   if (req.method === 'POST' && req.url === '/scheduler-event') {
     const body = await readBody(req);
-    log(`Événement scheduler: ${body.event} taskId=${body.taskId}`);
+    log(`Scheduler event: ${body.event} taskId=${body.taskId}`);
 
     if (body.event === 'slot-ready') {
       const parts   = (body.taskId || '').split(':');
@@ -193,12 +193,12 @@ const server = http.createServer(async (req, res) => {
       if (repo && issueId) {
         task_pickup({ repo, issueId, role, forceModel: body.modelId })
           .then(() => log(`Auto-pickup: ${repo}#${issueId} role=${role}`))
-          .catch(e => log(`Auto-pickup erreur: ${e.message}`, 'WARN'));
+          .catch(e => log(`Auto-pickup error: ${e.message}`, 'WARN'));
       }
     }
 
-    if (body.event === 'pause')  log(`Pause tâche ${body.taskId}`);
-    if (body.event === 'resume') log(`Reprise tâche ${body.taskId}`);
+    if (body.event === 'pause')  log(`Pause task ${body.taskId}`);
+    if (body.event === 'resume') log(`Resume task ${body.taskId}`);
 
     res.writeHead(200); res.end('ok');
     return;
@@ -215,32 +215,32 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(ORCHESTRATOR_PORT, '0.0.0.0', () => {
-  log(`Orchestrateur démarré :${ORCHESTRATOR_PORT} (${gitProviders.size} providers)`);
+  log(`Orchestrator started :${ORCHESTRATOR_PORT} (${gitProviders.size} providers)`);
 });
 
-// ── Export pour OpenClaw plugin ────────────────────────────────────────────────
+// ── OpenClaw plugin export ────────────────────────────────────────────────────
 
 module.exports = {
   tools: [
     {
       name: 'task_pickup',
-      description: 'Démarrer le pipeline RBAC sur une issue. Route automatiquement vers les spécialistes (architect, frontend, backend, fullstack, devops, qa, doc, marketing, design, product, bizdev) selon le contenu et le rules.yaml du projet.',
+      description: 'Start the RBAC pipeline on an issue. Automatically routes to specialists (architect, frontend, backend, fullstack, devops, qa, doc, marketing, design, product, bizdev) based on content and project rules.yaml.',
       parameters: {
         type: 'object',
         required: ['repo', 'issueId'],
         properties: {
-          repo:            { type: 'string', description: 'Repo au format owner/repo' },
-          issueId:         { type: 'number', description: "Numéro de l'issue" },
-          role:            { type: 'string', enum: ['architect','frontend','backend','fullstack','devops','security','qa','doc','marketing','design','product','bizdev'], description: 'Forcer un spécialiste (optionnel)' },
-          forceModel:      { type: 'string', description: 'Forcer un modèle Ollama (optionnel)' },
-          forceComplexity: { type: 'string', enum: ['simple','standard','complex'], description: 'Forcer la complexité (optionnel)' },
+          repo:            { type: 'string', description: 'Repo in owner/repo format' },
+          issueId:         { type: 'number', description: 'Issue number' },
+          role:            { type: 'string', enum: ['architect','frontend','backend','fullstack','devops','security','qa','doc','marketing','design','product','bizdev'], description: 'Force a specialist (optional)' },
+          forceModel:      { type: 'string', description: 'Force an Ollama model (optional)' },
+          forceComplexity: { type: 'string', enum: ['simple','standard','complex'], description: 'Force complexity (optional)' },
         },
       },
       handler: task_pickup,
     },
     {
       name: 'task_complete',
-      description: "Terminer un gate du pipeline. done/pass → avance au gate suivant. fail → retry automatique (3x max) puis escalade humaine. refine → note et continue.",
+      description: "Finish a pipeline gate. done/pass → advance to next gate. fail → automatic retry (3x max) then human escalation. refine → note and continue.",
       parameters: {
         type: 'object',
         required: ['repo', 'issueId', 'role', 'result'],
@@ -249,15 +249,15 @@ module.exports = {
           issueId:  { type: 'number' },
           role:     { type: 'string', enum: ['architect','frontend','backend','fullstack','devops','security','qa','doc','marketing','design','product','bizdev'] },
           result:   { type: 'string', enum: ['done','pass','fail','refine'] },
-          summary:  { type: 'string', description: 'Résumé du travail ou des problèmes trouvés' },
-          prNumber: { type: 'number', description: 'Numéro PR concernée (optionnel)' },
+          summary:  { type: 'string', description: 'Summary of work done or problems found' },
+          prNumber: { type: 'number', description: 'Related PR number (optional)' },
         },
       },
       handler: task_complete,
     },
     {
       name: 'queue_status',
-      description: 'État de la queue et des workers actifs pour un repo.',
+      description: 'Queue state and active workers for a repo.',
       parameters: {
         type: 'object',
         properties: { repo: { type: 'string' } },
@@ -266,7 +266,7 @@ module.exports = {
     },
     {
       name: 'session_health',
-      description: 'Vérifier et corriger les incohérences (workers bloqués, containers orphelins).',
+      description: 'Check and correct inconsistencies (blocked workers, orphaned containers).',
       parameters: {
         type: 'object',
         properties: {

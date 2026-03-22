@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * analyze.js — Analyse AST légère pour codebase-analyze
- * Usage : node analyze.js [fichier1] [fichier2] ...
- * Output : JSON index { relPath: { imports, exports, symbols, lines } }
+ * analyze.js — Lightweight AST analysis for codebase-analyze
+ * Usage: node analyze.js [file1] [file2] ...
+ * Output: JSON index { relPath: { imports, exports, symbols, lines } }
  */
 'use strict';
 
@@ -36,15 +36,15 @@ for (const file of files) {
       let m;
       while ((m = importRe.exec(content)) !== null) imports.push(m[1]);
 
-      // Exports nommés
+      // Named exports
       const exportRe = /export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type|enum)\s+(\w+)/g;
       while ((m = exportRe.exec(content)) !== null) exports.push(m[1]);
 
-      // Symboles (fonctions + classes)
+      // Symbols (functions + classes)
       const symRe = /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function\*?|class)\s+(\w+)/g;
       while ((m = symRe.exec(content)) !== null) symbols.push(m[1]);
 
-      // Const arrow functions exportées
+      // Exported const arrow functions
       const arrowRe = /(?:^|\n)\s*export\s+const\s+(\w+)\s*=\s*(?:async\s+)?\(?/g;
       while ((m = arrowRe.exec(content)) !== null) symbols.push(m[1]);
     }
@@ -77,7 +77,7 @@ for (const file of files) {
       ext,
     };
   } catch(e) {
-    // Fichier illisible — skip silencieux
+    // Unreadable file — silent skip
   }
 }
 

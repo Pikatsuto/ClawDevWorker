@@ -6,48 +6,48 @@
  * GTX 1660    :  6GB (gpu1)
  * Total       : 17GB
  *
- * API :
+ * API:
  *   GET  /health
  *   GET  /status
- *   POST /enqueue                  → tâche agent autonome
- *   POST /release                  → libère slot agent
- *   POST /score                    → calcule score sans enqueuer
- *   POST /chat/request             → dispatch modèle pour chat/vscode
- *   POST /chat/fanout              → enqueue N sous-tâches VSCode parallèles
- *   POST /chat/release             → libère slot chat
- *   POST /chat/session/lock        → lock le modèle pour la durée de la session
- *   POST /chat/session/score       → évalue un message, retourne conseil upgrade/downgrade
- *   POST /chat/session/confirm     → confirme upgrade ou downgrade proposé
- *   POST /chat/session/release     → libère la session (idle ou déconnexion)
- *   POST /human/heartbeat          → reset timer, gère préemption surface
- *   POST /human/token-end          → bascule surface si préemption en attente
- *   POST /human/active             → compat ancienne API
- *   POST /human/inactive           → reprise agents
+ *   POST /enqueue                  → autonomous agent task
+ *   POST /release                  → release agent slot
+ *   POST /score                    → compute score without enqueuing
+ *   POST /chat/request             → dispatch model for chat/vscode
+ *   POST /chat/fanout              → enqueue N parallel VSCode subtasks
+ *   POST /chat/release             → release chat slot
+ *   POST /chat/session/lock        → lock model for session duration
+ *   POST /chat/session/score       → evaluate a message, return upgrade/downgrade advice
+ *   POST /chat/session/confirm     → confirm proposed upgrade or downgrade
+ *   POST /chat/session/release     → release session (idle or disconnect)
+ *   POST /human/heartbeat          → reset timer, handle surface preemption
+ *   POST /human/token-end          → switch surface if preemption pending
+ *   POST /human/active             → legacy API compat
+ *   POST /human/inactive           → resume agents
  *
- * Modes :
- *   AGENT_ACTIVE    → agents tournent librement, toute la VRAM dispo
- *   HUMAN_SHARED    → humain actif, agents continuent SI la VRAM restante le permet
- *                     Si l'humain prend plus de place → pause les agents qui débordent
- *                     Quand la VRAM se libère → reprend les agents pausés (incrémantal)
- *   HUMAN_EXCLUSIVE → humain a pris toute la VRAM, plus de place pour aucun agent
- *                     Agents pausés jusqu'à libération
- *   (HUMAN_ACTIVE gardé comme alias de HUMAN_EXCLUSIVE pour compat)
+ * Modes:
+ *   AGENT_ACTIVE    → agents run freely, all VRAM available
+ *   HUMAN_SHARED    → human active, agents continue IF remaining VRAM allows it
+ *                     If human takes more space → pause agents that overflow
+ *                     When VRAM frees up → resume paused agents (incremental)
+ *   HUMAN_EXCLUSIVE → human has taken all VRAM, no room for any agent
+ *                     Agents paused until release
+ *   (HUMAN_ACTIVE kept as alias for HUMAN_EXCLUSIVE for compat)
  *
- * Transition :
- *   heartbeat reçu → HUMAN_SHARED
- *     → recalcule VRAM après session humaine
- *     → si free < MIN_AGENT_VRAM → HUMAN_EXCLUSIVE, pause tout
- *     → sinon → HUMAN_SHARED, agents en cours continuent
- *   Chaque token humain → recalcule → reprend agents si de la place s'est libérée
- *   idle 15min → AGENT_ACTIVE, tout reprend
+ * Transition:
+ *   heartbeat received → HUMAN_SHARED
+ *     → recalculate VRAM after human session
+ *     → if free < MIN_AGENT_VRAM → HUMAN_EXCLUSIVE, pause all
+ *     → otherwise → HUMAN_SHARED, running agents continue
+ *   Each human token → recalculate → resume agents if space has freed up
+ *   idle 15min → AGENT_ACTIVE, everything resumes
  *
- * Session model lock :
- *   - Premier message → score algo → CPU tranche si zone grise → modèle locké keep_alive=-1
+ * Session model lock:
+ *   - First message → score algo → CPU tiebreaker if grey zone → model locked keep_alive=-1
  *   - score > session.minScore + UPGRADE_THRESHOLD → propose upgrade (chat/vscode)
- *                                                  → upgrade silencieux (agent AGENT_ACTIVE)
+ *                                                  → silent upgrade (agent AGENT_ACTIVE)
  *   - score < session.minScore - DOWNGRADE_THRESHOLD → lowScoreStreak++
- *     → streak >= 3 → propose downgrade (chat/vscode) / downgrade silencieux (agent)
- *   - HUMAN_EXCLUSIVE → agents : rien ne bouge
+ *     → streak >= 3 → propose downgrade (chat/vscode) / silent downgrade (agent)
+ *   - HUMAN_EXCLUSIVE → agents: nothing changes
  */
 'use strict';
 const http = require('http');
@@ -63,15 +63,15 @@ const DOWNGRADE_THRESHOLD   = parseInt(process.env.DOWNGRADE_THRESHOLD    || '20
 const DOWNGRADE_STREAK_MAX  = parseInt(process.env.DOWNGRADE_STREAK_MAX   || '3');
 const MIN_AGENT_VRAM        = parseInt(process.env.MIN_AGENT_VRAM         || '2');
 
-// ── Catalogue modèles — configurable via .env ─────────────────────────────────
-// MODEL_COMPLEX   → score ≥ 70  (défaut: qwen3.5:27b-q3_k_m, 14GB)
-// MODEL_STANDARD  → score 30-70 (défaut: qwen3.5:9b,          5GB)
-// MODEL_LIGHT     → score 10-30 (défaut: qwen3.5:4b,          3GB)
-// MODEL_TRIVIAL   → score < 10  (défaut: qwen3.5:2b,          2GB)
-// MODEL_CPU       → CPU only    (défaut: qwen3.5:0.8b,        0GB)
+// ── Model catalog — configurable via .env ─────────────────────────────────
+// MODEL_COMPLEX   → score ≥ 70  (default: qwen3.5:27b-q3_k_m, 14GB)
+// MODEL_STANDARD  → score 30-70 (default: qwen3.5:9b,          5GB)
+// MODEL_LIGHT     → score 10-30 (default: qwen3.5:4b,          3GB)
+// MODEL_TRIVIAL   → score < 10  (default: qwen3.5:2b,          2GB)
+// MODEL_CPU       → CPU only    (default: qwen3.5:0.8b,        0GB)
 //
 // VRAM_COMPLEX / VRAM_STANDARD / VRAM_LIGHT / VRAM_TRIVIAL permettent
-// d'ajuster si le modèle choisi a une empreinte différente.
+// to adjust if the chosen model has a different footprint.
 
 const M_COMPLEX  = process.env.MODEL_COMPLEX  || 'qwen3.5:27b-q3_k_m';
 const M_STANDARD = process.env.MODEL_STANDARD || 'qwen3.5:9b';
@@ -84,7 +84,7 @@ const VRAM_STANDARD = parseInt(process.env.VRAM_STANDARD || '5');
 const VRAM_LIGHT    = parseInt(process.env.VRAM_LIGHT    || '3');
 const VRAM_TRIVIAL  = parseInt(process.env.VRAM_TRIVIAL  || '2');
 
-// Catalogue construit dynamiquement au démarrage
+// Catalog built dynamically at startup
 const MODELS = {
   [M_COMPLEX]:  { vram: VRAM_COMPLEX,  quality:10, maxAgents:1, thinking:true,  minScore:70 },
   [M_STANDARD]: { vram: VRAM_STANDARD, quality: 7, maxAgents:3, thinking:true,  minScore:30 },
@@ -93,7 +93,7 @@ const MODELS = {
   [M_CPU]:      { vram: 0,             quality: 1, maxAgents:8, thinking:false, minScore: 0 },
 };
 
-// Tous les rôles spécialistes partagent la même préférence de modèles
+// All specialist roles share the same model preferences
 const SPECIALIST_ROLES = [
   'architect','frontend','backend','fullstack','devops','security','qa','doc',
   'marketing','design','product','bizdev',
@@ -103,7 +103,7 @@ const MODEL_PREFS = {
   chat:  [M_COMPLEX, M_STANDARD, M_LIGHT, M_TRIVIAL],
   audit: [M_STANDARD, M_LIGHT, M_TRIVIAL],
 };
-// Injecter tous les rôles spécialistes avec la même liste
+// Inject all specialist roles with the same list
 for (const role of SPECIALIST_ROLES) {
   MODEL_PREFS[role] = [M_COMPLEX, M_STANDARD, M_LIGHT, M_TRIVIAL];
 }
@@ -111,7 +111,7 @@ for (const role of SPECIALIST_ROLES) {
 MODEL_PREFS.dev = MODEL_PREFS.frontend;
 MODEL_PREFS.qa  = [M_STANDARD, M_LIGHT, M_TRIVIAL];
 
-// Chemins upgrade/downgrade — construits dynamiquement
+// Upgrade/downgrade paths — built dynamically
 const MODEL_UPGRADE = {
   [M_TRIVIAL]:  M_LIGHT,
   [M_LIGHT]:    M_STANDARD,
@@ -133,9 +133,9 @@ const totalVram = () => GPUS.reduce((a,g) => a+g.total, 0);
 const totalFree = () => GPUS.reduce((a,g) => a+g.total-g.reserved, 0);
 
 const KW = {
-  critical:['security','sécurité','auth','migration','database','base de données','architecture','refactor','refacto','system','deploy','infrastructure','performance','breaking','cve','vulnerability'],
-  high:    ['feature','fonctionnalité','api','integration','multi','async','concurrent','cache','algorithm','algorithme','search','indexing'],
-  medium:  ['bug','fix','error','erreur','crash','regression','test','validation'],
+  critical:['security','auth','migration','database','architecture','refactor','refacto','system','deploy','infrastructure','performance','breaking','cve','vulnerability'],
+  high:    ['feature','api','integration','multi','async','concurrent','cache','algorithm','search','indexing'],
+  medium:  ['bug','fix','error','crash','regression','test','validation'],
   low:     ['typo','css','style','rename','copy','wording','comment','doc','documentation','readme','indent','format','lint'],
 };
 
@@ -153,12 +153,12 @@ const state = {
   queue:              [],
   pausedTasks:        new Map(),
 
-  // Sessions chat/vscode — modèle locké pour la durée de la session
+  // Chat/vscode sessions — model locked for session duration
   // sessionId → {
   //   modelId, surface, lockedAt,
-  //   lowScoreStreak,   // nb de messages consécutifs sous le seuil
-  //   pendingDowngrade, // modèle proposé au downgrade, attend confirmation
-  //   pendingUpgrade,   // modèle proposé à l'upgrade, attend confirmation
+  //   lowScoreStreak,   // number of consecutive messages below threshold
+  //   pendingDowngrade, // model proposed for downgrade, awaiting confirmation
+  //   pendingUpgrade,   // model proposed for upgrade, awaiting confirmation
   //   lastScore,
   // }
   sessionModels: new Map(),
@@ -231,18 +231,18 @@ function computeChatScore(messages=[]) {
   for (const kw of KW.high)     if (text.includes(kw)) score+=6;
   for (const kw of KW.medium)   if (text.includes(kw)) score+=3;
   for (const kw of KW.low)      if (text.includes(kw)) score-=8;
-  if ([/^(c'est quoi|qu'est-ce|what is|how do|comment faire|pourquoi)/i,/\?$/,/^(merci|ok|yes|oui|non|no)\b/i]
+  if ([/^(what is|how do|why)\b/i,/\?$/,/^(thanks|ok|yes|no)\b/i]
       .some(p=>p.test(content.trim()))) score-=15;
-  if (/\b(refactor|rewrite|réécrire|implément|implement|créer|create|génère|generate)\b/i.test(text)) score+=15;
-  if (/\b(fichier|file|classe|class|module|composant|component)\b/i.test(text)) score+=8;
+  if (/\b(refactor|rewrite|implement|create|generate)\b/i.test(text)) score+=15;
+  if (/\b(file|class|module|component)\b/i.test(text)) score+=8;
   return Math.max(0, Math.min(100, score));
 }
 
 // ── Dispatch chat/vscode ──────────────────────────────────────────────────────
-// Priorité :
-//   1. Modèle chargé avec slot libre (qualitatif d'abord)
-//   2. n+1 déjà chargé avec slot libre — opportuniste
-//   3. Charger le modèle idéal si VRAM suffisante
+// Priority:
+//   1. Loaded model with free slot (highest quality first)
+//   2. n+1 already loaded with free slot — opportunistic
+//   3. Load ideal model if enough VRAM
 //   4. Fallback CPU
 
 function dispatchChatModel(score) {
@@ -250,7 +250,7 @@ function dispatchChatModel(score) {
   const idealId = prefs.find(m => MODELS[m]?.minScore<=score) || prefs[prefs.length-1];
   const idealQ  = MODELS[idealId]?.quality || 0;
 
-  // 1+2 : slot libre sur modèle déjà chargé
+  // 1+2: free slot on already loaded model
   const candidates = [];
   for (const modelId of prefs) {
     const loaded = state.loadedModels.get(modelId);
@@ -264,32 +264,32 @@ function dispatchChatModel(score) {
       .filter(c => c.quality >= idealQ-2)
       .sort((a,b) => b.quality-a.quality)[0]
       || candidates.sort((a,b) => b.quality-a.quality)[0];
-    log(`Chat dispatch: réutilisation ${best.modelId} (score=${score})`);
+    log(`Chat dispatch: reusing ${best.modelId} (score=${score})`);
     return { modelId:best.modelId, ollamaUrl:OLLAMA_URL, fallback:false, reuse:true };
   }
 
-  // 3 : charger modèle idéal
+  // 3: load ideal model
   const idealModel = MODELS[idealId];
   if (idealModel && totalFree()>=idealModel.vram) {
-    log(`Chat dispatch: chargement ${idealId} (score=${score}, libre=${totalFree()}GB)`);
+    log(`Chat dispatch: loading ${idealId} (score=${score}, free=${totalFree()}GB)`);
     return { modelId:idealId, ollamaUrl:OLLAMA_URL, fallback:false, reuse:false };
   }
 
-  // 4 : fallback CPU
-  log(`Chat dispatch: fallback CPU (score=${score}, libre=${totalFree()}GB)`, 'WARN');
+  // 4: fallback CPU
+  log(`Chat dispatch: fallback CPU (score=${score}, free=${totalFree()}GB)`, 'WARN');
   return { modelId:'qwen3.5:0.8b', ollamaUrl:OLLAMA_CPU_URL, fallback:true, reuse:false };
 }
 
 // ── Session model — lock + streak upgrade/downgrade ───────────────────────────
 //
-// Logique identique pour chat, vscode et agents autonomes.
-// La différence est dans l'action :
-//   chat/vscode  → retourne une proposition, attend confirmation humaine
-//   agent        → applique silencieusement si AGENT_ACTIVE
+// Identical logic for chat, vscode and autonomous agents.
+// The difference is in the action:
+//   chat/vscode  → returns a proposal, waits for human confirmation
+//   agent        → applies silently if AGENT_ACTIVE
 
 /**
- * Crée ou retourne une session pour un sessionId.
- * Au premier appel : choisit le modèle via dispatchChatModel, le locke.
+ * Creates or returns a session for a sessionId.
+ * On first call: chooses the model via dispatchChatModel and locks it.
  */
 async function getOrCreateSession(sessionId, surface, messages) {
   if (state.sessionModels.has(sessionId)) return state.sessionModels.get(sessionId);
@@ -297,7 +297,7 @@ async function getOrCreateSession(sessionId, surface, messages) {
   const score    = computeChatScore(messages);
   const dispatch = dispatchChatModel(score);
 
-  // Charge le modèle si nécessaire et alloue VRAM
+  // Load model if needed and allocate VRAM
   if (!dispatch.fallback && !dispatch.reuse) {
     const model = MODELS[dispatch.modelId];
     const gpus  = allocateVram(model.vram);
@@ -321,18 +321,18 @@ async function getOrCreateSession(sessionId, surface, messages) {
   };
 
   state.sessionModels.set(sessionId, session);
-  log(`Session ${sessionId} lockée sur ${dispatch.modelId} (score=${score} surface=${surface})`);
+  log(`Session ${sessionId} locked on ${dispatch.modelId} (score=${score} surface=${surface})`);
   return session;
 }
 
 /**
- * Évalue un message dans le contexte d'une session existante.
- * Retourne l'action à prendre :
- *   { action: 'ok',        modelId, ollamaUrl }          → continuer normalement
+ * Evaluates a message in the context of an existing session.
+ * Returns the action to take:
+ *   { action: 'ok',        modelId, ollamaUrl }          → continue normally
  *   { action: 'upgrade',   modelId, targetModel, vramDelta, reason }
  *   { action: 'downgrade', modelId, targetModel, vramFreed, reason }
  *
- * Pour les agents (surface='agent') : applique directement si AGENT_ACTIVE.
+ * For agents (surface='agent'): applies directly if AGENT_ACTIVE.
  */
 async function evaluateSessionMessage(sessionId, messages) {
   const session = state.sessionModels.get(sessionId);
@@ -344,7 +344,7 @@ async function evaluateSessionMessage(sessionId, messages) {
 
   session.lastScore = score;
 
-  // ── Upgrade : score explose ───────────────────────────────────────────────
+  // ── Upgrade: score spikes ───────────────────────────────────────────────
   if (score > minScore + UPGRADE_THRESHOLD) {
     session.lowScoreStreak = 0;
     const targetModel = MODEL_UPGRADE[session.modelId];
@@ -354,24 +354,24 @@ async function evaluateSessionMessage(sessionId, messages) {
     const currentVram = model?.vram ?? 0;
     const vramDelta = targetVram - currentVram;
     const hasFreeVram = totalFree() >= vramDelta;
-    const reason = `Score ${score} dépasse le seuil du modèle actuel (${session.modelId}, minScore=${minScore}) de +${score - minScore - UPGRADE_THRESHOLD} points`;
+    const reason = `Score ${score} exceeds current model threshold (${session.modelId}, minScore=${minScore}) by +${score - minScore - UPGRADE_THRESHOLD} points`;
 
     if (session.surface === 'agent') {
-      // Agent autonome → upgrade silencieux sauf si humain exclusif
+      // Autonomous agent → silent upgrade unless human exclusive
       if (state.mode !== 'HUMAN_EXCLUSIVE' && state.mode !== 'HUMAN_ACTIVE' && hasFreeVram) {
         await applySessionModelChange(sessionId, targetModel);
-        log(`Session ${sessionId} upgradée silencieusement → ${targetModel} (score=${score})`);
+        log(`Session ${sessionId} silently upgraded → ${targetModel} (score=${score})`);
         return { action:'ok', modelId:targetModel, ollamaUrl:OLLAMA_URL, silent:true };
       }
       return { action:'ok', modelId:session.modelId, ollamaUrl:session.ollamaUrl };
     }
 
-    // Chat/vscode → proposition (pas de confirmation en attente déjà)
+    // Chat/vscode → proposal (no pending confirmation already)
     if (!session.pendingUpgrade) {
       session.pendingUpgrade = targetModel;
       const vramInfo = hasFreeVram
-        ? `${vramDelta}GB supplémentaires disponibles`
-        : `manque ${vramDelta - totalFree()}GB — des agents seront mis en pause`;
+        ? `${vramDelta}GB additional available`
+        : `missing ${vramDelta - totalFree()}GB — some agents will be paused`;
       return {
         action: 'upgrade',
         modelId: session.modelId,
@@ -380,15 +380,15 @@ async function evaluateSessionMessage(sessionId, messages) {
         vramDelta,
         hasFreeVram,
         reason,
-        message: `⬆️ Cette tâche mérite un modèle plus puissant.\n` +
-                 `Passer à **${targetModel}** (${vramInfo}).\n` +
-                 `Réponds \`/upgrade\` pour confirmer ou continue avec le modèle actuel.`,
+        message: `⬆️ This task deserves a more powerful model.\n` +
+                 `Switch to **${targetModel}** (${vramInfo}).\n` +
+                 `Reply \`/upgrade\` to confirm or continue with the current model.`,
       };
     }
     return { action:'ok', modelId:session.modelId, ollamaUrl:session.ollamaUrl };
   }
 
-  // ── Downgrade : score bas sur N messages consécutifs ─────────────────────
+  // ── Downgrade: low score over N consecutive messages ─────────────────────
   if (score < minScore - DOWNGRADE_THRESHOLD) {
     session.lowScoreStreak++;
 
@@ -400,16 +400,16 @@ async function evaluateSessionMessage(sessionId, messages) {
       const vramFreed = (model?.vram ?? 0) - (MODELS[targetModel]?.vram ?? 0);
 
       if (session.surface === 'agent') {
-        // Agent autonome → downgrade silencieux sauf si humain exclusif
+        // Autonomous agent → silent downgrade unless human exclusive
         if (state.mode !== 'HUMAN_EXCLUSIVE' && state.mode !== 'HUMAN_ACTIVE') {
           await applySessionModelChange(sessionId, targetModel);
-          log(`Session ${sessionId} downgradée silencieusement → ${targetModel} (streak=${DOWNGRADE_STREAK_MAX})`);
+          log(`Session ${sessionId} silently downgraded → ${targetModel} (streak=${DOWNGRADE_STREAK_MAX})`);
           return { action:'ok', modelId:targetModel, ollamaUrl:OLLAMA_URL, silent:true };
         }
         return { action:'ok', modelId:session.modelId, ollamaUrl:session.ollamaUrl };
       }
 
-      // Chat/vscode → proposition
+      // Chat/vscode → proposal
       if (!session.pendingDowngrade) {
         session.pendingDowngrade = targetModel;
         return {
@@ -418,25 +418,25 @@ async function evaluateSessionMessage(sessionId, messages) {
           targetModel,
           ollamaUrl: session.ollamaUrl,
           vramFreed,
-          message: `💡 Les ${DOWNGRADE_STREAK_MAX} derniers messages ne nécessitent pas **${session.modelId}**.\n` +
-                   `Passer à **${targetModel}** libérerait **${vramFreed}GB** de VRAM pour tes agents.\n` +
-                   `Réponds \`/downgrade\` pour confirmer ou continue normalement.`,
+          message: `💡 The last ${DOWNGRADE_STREAK_MAX} messages don't require **${session.modelId}**.\n` +
+                   `Switching to **${targetModel}** would free **${vramFreed}GB** of VRAM for your agents.\n` +
+                   `Reply \`/downgrade\` to confirm or continue normally.`,
         };
       }
     }
-    // Streak en cours mais pas encore atteint → continue normalement
+    // Streak in progress but not reached yet → continue normally
     return { action:'ok', modelId:session.modelId, ollamaUrl:session.ollamaUrl };
   }
 
-  // ── Score normal → reset streak ───────────────────────────────────────────
+  // ── Normal score → reset streak ───────────────────────────────────────────
   session.lowScoreStreak = 0;
-  session.pendingUpgrade   = null; // annule proposition upgrade si score revient normal
+  session.pendingUpgrade   = null; // cancel upgrade proposal if score returns to normal
   return { action:'ok', modelId:session.modelId, ollamaUrl:session.ollamaUrl };
 }
 
 /**
- * Applique un changement de modèle sur une session (upgrade ou downgrade).
- * Libère l'ancien modèle si plus aucun slot ne l'utilise, charge le nouveau.
+ * Applies a model change on a session (upgrade or downgrade).
+ * Releases the old model if no slot is using it anymore, loads the new one.
  */
 async function applySessionModelChange(sessionId, targetModelId) {
   const session = state.sessionModels.get(sessionId);
@@ -446,10 +446,10 @@ async function applySessionModelChange(sessionId, targetModelId) {
   const targetModel = MODELS[targetModelId];
   if (!targetModel) return false;
 
-  // Libère l'ancien modèle si aucun autre slot ne l'utilise
+  // Release old model if no other slot is using it
   const loaded = state.loadedModels.get(oldModelId);
   if (loaded) {
-    // Retire le slot de session de l'ancien modèle
+    // Remove session slot from old model
     for (const [k, v] of loaded.agentSlots) {
       if (v === sessionId) { loaded.agentSlots.delete(k); break; }
     }
@@ -459,7 +459,7 @@ async function applySessionModelChange(sessionId, targetModelId) {
     }
   }
 
-  // Charge le nouveau modèle
+  // Load new model
   const gpus = allocateVram(targetModel.vram);
   if (gpus) {
     await loadModel(targetModelId);
@@ -479,7 +479,7 @@ async function applySessionModelChange(sessionId, targetModelId) {
 }
 
 /**
- * Libère une session et décharge le modèle si plus aucun utilisateur.
+ * Releases a session and unloads the model if no users remain.
  */
 async function releaseSession(sessionId) {
   const session = state.sessionModels.get(sessionId);
@@ -497,7 +497,7 @@ async function releaseSession(sessionId) {
   }
 
   state.sessionModels.delete(sessionId);
-  log(`Session ${sessionId} libérée (${session.modelId})`);
+  log(`Session ${sessionId} released (${session.modelId})`);
 }
 
 const AMBIGUITY_ZONE_LOW  = 45;
@@ -510,10 +510,10 @@ async function cpuAmbiguityCheck({title,body,role,score,queueLength,currentModel
   const degradedQ = MODELS[degradedModel]?.quality || 0;
   if (currentQ-degradedQ>3) return null;
   const prompt = [`Issue: "${title}"`, body?`Description: "${body.slice(0,300)}"`:'',
-    `Rôle: ${role} | Score: ${score}/100`,
-    `Modèle actuel: ${currentModel} (q=${currentQ}/10) → dégradé: ${degradedModel} (q=${degradedQ}/10)`,
-    `Queue: ${queueLength} tâches`,
-    `Dégrader pour libérer un slot GPU supplémentaire ? YES ou NO.`
+    `Role: ${role} | Score: ${score}/100`,
+    `Current model: ${currentModel} (q=${currentQ}/10) → degraded: ${degradedModel} (q=${degradedQ}/10)`,
+    `Queue: ${queueLength} tasks`,
+    `Degrade to free an additional GPU slot? YES or NO.`
   ].filter(Boolean).join('\n');
   try {
     const res = await ollamaReq('POST','/api/generate',{
@@ -521,9 +521,9 @@ async function cpuAmbiguityCheck({title,body,role,score,queueLength,currentModel
       options:{num_gpu:0, num_predict:5, temperature:0}
     }, OLLAMA_CPU_URL);
     const decision = (res.response||'').trim().toUpperCase().startsWith('YES')?'degrade':'keep';
-    log(`Ambiguïté CPU → ${decision}`);
+    log(`CPU ambiguity → ${decision}`);
     return decision;
-  } catch(e) { log(`Ambiguïté CPU échouée: ${e.message}`,'WARN'); return null; }
+  } catch(e) { log(`CPU ambiguity failed: ${e.message}`,'WARN'); return null; }
 }
 
 // ── Algo planQueue ────────────────────────────────────────────────────────────
@@ -538,17 +538,17 @@ function evalPlan(plan, queueSize) {
 function planQueue() {
   if (!state.queue.length) return [];
 
-  // Routing MODEL_<ROLE> depuis .env — override prioritaire sur MODEL_PREFS
-  // Ex: MODEL_MARKETING=mistral:7b → utilisé en premier pour le gate marketing
+  // Routing MODEL_<ROLE> from .env — priority override over MODEL_PREFS
+  // E.g.: MODEL_MARKETING=mistral:7b → used first for the marketing gate
   function getPrefsForRole(role) {
     const envKey   = `MODEL_${role.toUpperCase()}`;
     const envModel = process.env[envKey];
     const base     = MODEL_PREFS[role] || MODEL_PREFS.dev;
     if (envModel && !base.includes(envModel)) {
-      // Injecter le modèle spécifique en tête + l'ajouter au catalogue si inconnu
+      // Inject specific model at head + add to catalog if unknown
       if (!MODELS[envModel]) {
         MODELS[envModel] = { vram: 5, quality: 7, maxAgents: 3, thinking: true, minScore: 0 };
-        log(`MODEL_${role.toUpperCase()}=${envModel} chargé depuis .env (vram estimée 5GB)`);
+        log(`MODEL_${role.toUpperCase()}=${envModel} loaded from .env (estimated vram 5GB)`);
       }
       return [envModel, ...base];
     }
@@ -609,7 +609,7 @@ function planQueue() {
   if (bestPlan.length>0) {
     const summary = [...new Set(bestPlan.map(p=>p.modelId))]
       .map(m=>`${m}(×${bestPlan.filter(p=>p.modelId===m).length})`).join(', ');
-    log(`Plan: ${bestPlan.length}/${queueSize} tâches | score=${bestScore.toFixed(3)} | ${summary}`);
+    log(`Plan: ${bestPlan.length}/${queueSize} tasks | score=${bestScore.toFixed(3)} | ${summary}`);
   }
   return bestPlan;
 }
@@ -660,37 +660,37 @@ function ollamaReq(method, urlPath, body=null, baseUrl=OLLAMA_URL) {
 
 async function loadModel(modelId) {
   if (state.loadedModels.has(modelId)) return;
-  log(`Chargement: ${modelId}`);
+  log(`Loading: ${modelId}`);
   try {
     await ollamaReq('POST','/api/generate',{model:modelId,keep_alive:-1,prompt:'',options:{num_parallel:MODELS[modelId]?.maxAgents||2}});
-    log(`${modelId} prêt (max ${MODELS[modelId]?.maxAgents} agents)`);
-  } catch(e){log(`Erreur load ${modelId}: ${e.message}`,'WARN');}
+    log(`${modelId} ready (max ${MODELS[modelId]?.maxAgents} agents)`);
+  } catch(e){log(`Error loading ${modelId}: ${e.message}`,'WARN');}
 }
 
 async function unloadModel(modelId) {
   try {
     await ollamaReq('POST','/api/generate',{model:modelId,keep_alive:0,prompt:''});
     state.loadedModels.delete(modelId);
-    log(`${modelId} déchargé`);
-  } catch(e){log(`Erreur unload ${modelId}: ${e.message}`,'WARN');}
+    log(`${modelId} unloaded`);
+  } catch(e){log(`Error unloading ${modelId}: ${e.message}`,'WARN');}
 }
 
-// ── Priorité humaine — cohabitation HUMAN_SHARED / HUMAN_EXCLUSIVE ───────────
+// ── Human priority — HUMAN_SHARED / HUMAN_EXCLUSIVE cohabitation ───────────
 //
-// HUMAN_SHARED    : humain actif, agents continuent si VRAM suffisante
-// HUMAN_EXCLUSIVE : humain a pris toute la place, agents pausés
-// AGENT_ACTIVE    : humain idle, agents libres
+// HUMAN_SHARED    : human active, agents continue if enough VRAM
+// HUMAN_EXCLUSIVE : human took all space, agents paused
+// AGENT_ACTIVE    : human idle, agents free
 //
-// Alias : HUMAN_ACTIVE = HUMAN_EXCLUSIVE (compat)
+// Alias: HUMAN_ACTIVE = HUMAN_EXCLUSIVE (compat)
 
 /**
- * Calcule la VRAM consommée par les slots humains (chat/vscode).
- * = somme des VRAM des modèles chargés uniquement pour des slots chat.
+ * Computes VRAM consumed by human slots (chat/vscode).
+ * = sum of VRAM of models loaded only for chat slots.
  */
 function humanVramUsed() {
   let used = 0;
   for (const [modelId, loaded] of state.loadedModels) {
-    // Un modèle est "humain" si au moins un de ses slots est un slot chat
+    // A model is "human" if at least one of its slots is a chat slot
     const hasChatSlot = [...state.chatSlots.values()].some(s => s.modelId === modelId);
     if (hasChatSlot) used += loaded.vram;
   }
@@ -698,31 +698,31 @@ function humanVramUsed() {
 }
 
 /**
- * VRAM réellement disponible pour les agents autonomes
- * = totalFree() - marge de sécurité pour les éventuels chargements humains
+ * VRAM actually available for autonomous agents
+ * = totalFree() - safety margin for potential human model loads
  */
 function agentFreeVram() {
   return Math.max(0, totalFree());
 }
 
 /**
- * Pause uniquement les agents qui n'ont plus assez de VRAM.
- * Laisse tourner ceux qui sont déjà alloués si la VRAM est suffisante.
- * Appelé quand on passe en HUMAN_SHARED ou HUMAN_EXCLUSIVE.
+ * Pauses only agents that no longer have enough VRAM.
+ * Keeps running those already allocated if VRAM is sufficient.
+ * Called when transitioning to HUMAN_SHARED or HUMAN_EXCLUSIVE.
  */
 async function pauseAgentsIfNeeded() {
   const free = agentFreeVram();
-  log(`🧑 HUMAN_SHARED — VRAM libre=${free}GB MIN_AGENT=${MIN_AGENT_VRAM}GB`);
+  log(`🧑 HUMAN_SHARED — VRAM free=${free}GB MIN_AGENT=${MIN_AGENT_VRAM}GB`);
 
   if (free >= MIN_AGENT_VRAM) {
-    // Assez de place — les agents actifs peuvent rester
-    // Bloquer seulement les nouvelles allocations depuis la queue
-    log('Agents actifs maintenus (VRAM suffisante)');
+    // Enough space — active agents can stay
+    // Only block new allocations from the queue
+    log('Active agents maintained (VRAM sufficient)');
     return;
   }
 
-  // Pas assez de place — passer en HUMAN_EXCLUSIVE, pauser tout
-  log('⚠️ VRAM insuffisante pour cohabitation → HUMAN_EXCLUSIVE','WARN');
+  // Not enough space — switch to HUMAN_EXCLUSIVE, pause all
+  log('⚠️ Insufficient VRAM for cohabitation → HUMAN_EXCLUSIVE','WARN');
   state.mode = 'HUMAN_EXCLUSIVE';
 
   for (const [slotId, slot] of state.activeSlots) {
@@ -731,7 +731,7 @@ async function pauseAgentsIfNeeded() {
   }
   state.activeSlots.clear();
 
-  // Décharger les modèles agents (garder les modèles humains chargés)
+  // Unload agent models (keep human models loaded)
   for (const [modelId, loaded] of state.loadedModels) {
     const hasChatSlot = [...state.chatSlots.values()].some(s => s.modelId === modelId);
     if (!hasChatSlot) {
@@ -739,19 +739,19 @@ async function pauseAgentsIfNeeded() {
       await unloadModel(modelId);
     }
   }
-  // Nettoyer les loadedModels agents
+  // Clean up agent loadedModels
   for (const modelId of [...state.loadedModels.keys()]) {
     const hasChatSlot = [...state.chatSlots.values()].some(s => s.modelId === modelId);
     if (!hasChatSlot) state.loadedModels.delete(modelId);
   }
 
-  log(`HUMAN_EXCLUSIVE — libre=${totalFree()}GB`);
+  log(`HUMAN_EXCLUSIVE — free=${totalFree()}GB`);
 }
 
 /**
- * Tente de reprendre des agents pausés si de la VRAM s'est libérée.
- * Appelé après chaque release de slot humain (token-end, session/release).
- * Incrémental : reprend autant d'agents que la VRAM permet.
+ * Attempts to resume paused agents if VRAM has freed up.
+ * Called after each human slot release (token-end, session/release).
+ * Incremental: resumes as many agents as VRAM allows.
  */
 async function tryResumeAgents() {
   if (state.mode === 'AGENT_ACTIVE') return;
@@ -759,18 +759,18 @@ async function tryResumeAgents() {
 
   const free = agentFreeVram();
   if (free < MIN_AGENT_VRAM) {
-    log(`tryResumeAgents: VRAM ${free}GB < ${MIN_AGENT_VRAM}GB → pas de reprise`);
+    log(`tryResumeAgents: VRAM ${free}GB < ${MIN_AGENT_VRAM}GB → no resume`);
     return;
   }
 
-  log(`↩️ VRAM ${free}GB disponible — tentative reprise agents pausés`);
+  log(`↩️ VRAM ${free}GB available — attempting to resume paused agents`);
 
-  // Passer en HUMAN_SHARED si on était HUMAN_EXCLUSIVE
+  // Switch to HUMAN_SHARED if we were HUMAN_EXCLUSIVE
   if (state.mode === 'HUMAN_EXCLUSIVE' || state.mode === 'HUMAN_ACTIVE') {
     state.mode = 'HUMAN_SHARED';
   }
 
-  // Remettre les tâches pausées dans la queue pour processQueue()
+  // Put paused tasks back in queue for processQueue()
   for (const [taskId, ctx] of state.pausedTasks) {
     state.queue.push({
       taskId, repo: ctx.repo, issueId: ctx.issueId, role: ctx.role,
@@ -785,11 +785,11 @@ async function tryResumeAgents() {
 }
 
 /**
- * Reprise complète — humain idle depuis HUMAN_IDLE_CHAT_MS.
+ * Full resume — human idle for HUMAN_IDLE_CHAT_MS.
  */
 async function resumeAgentsFull() {
   if (state.mode === 'AGENT_ACTIVE') return;
-  log(`🤖 AGENT_ACTIVE — humain idle ${HUMAN_IDLE_CHAT_MS/60000}min`);
+  log(`🤖 AGENT_ACTIVE — human idle ${HUMAN_IDLE_CHAT_MS/60000}min`);
   state.mode         = 'AGENT_ACTIVE';
   state.activeSurface = null;
 
@@ -809,7 +809,7 @@ function scheduleIdleCheck() {
   if (state.humanIdleTimer) clearTimeout(state.humanIdleTimer);
   state.humanIdleTimer = setTimeout(async () => {
     if (Date.now() - state.humanLastSeen >= HUMAN_IDLE_CHAT_MS) {
-      log(`Humain idle ${HUMAN_IDLE_CHAT_MS/60000}min → AGENT_ACTIVE`);
+      log(`Human idle ${HUMAN_IDLE_CHAT_MS/60000}min → AGENT_ACTIVE`);
       await resumeAgentsFull();
     }
   }, HUMAN_IDLE_CHAT_MS);
@@ -818,13 +818,13 @@ function scheduleIdleCheck() {
 async function handleHeartbeat(surface) {
   state.humanLastSeen = Date.now();
 
-  // Gestion préemption entre surfaces (chat ↔ vscode)
+  // Handle preemption between surfaces (chat ↔ vscode)
   if (state.activeSurface && state.activeSurface !== surface) {
     if (state.waitingForTokenEnd) {
       state.pendingSurface = surface;
       return { ok: true, surface, preempting: true, waiting: true };
     }
-    log(`Surface ${surface} préempte ${state.activeSurface} (attend fin token)`, 'WARN');
+    log(`Surface ${surface} preempts ${state.activeSurface} (waiting for token end)`, 'WARN');
     state.waitingForTokenEnd = true;
     state.pendingSurface     = surface;
     return { ok: true, surface, preempting: true, waiting: true };
@@ -832,14 +832,14 @@ async function handleHeartbeat(surface) {
 
   state.activeSurface = surface;
 
-  // Première fois que l'humain arrive (depuis AGENT_ACTIVE)
+  // First time human arrives (from AGENT_ACTIVE)
   if (state.mode === 'AGENT_ACTIVE') {
     state.mode = 'HUMAN_SHARED';
-    log(`🧑 ${surface} actif → HUMAN_SHARED`);
+    log(`🧑 ${surface} active → HUMAN_SHARED`);
     await pauseAgentsIfNeeded();
   }
-  // Si déjà en mode humain, recalculer à chaque heartbeat (token)
-  // pour reprendre des agents si de la VRAM s'est libérée entre temps
+  // If already in human mode, recalculate on each heartbeat (token)
+  // to resume agents if VRAM has freed up in the meantime
   else if (state.mode === 'HUMAN_EXCLUSIVE' || state.mode === 'HUMAN_ACTIVE') {
     await tryResumeAgents();
   }
@@ -856,7 +856,7 @@ function handleTokenEnd() {
   state.activeSurface      = state.pendingSurface;
   state.waitingForTokenEnd = false;
   state.pendingSurface     = null;
-  log(`Bascule surface ${prev} → ${state.activeSurface}`);
+  log(`Surface switch ${prev} → ${state.activeSurface}`);
   scheduleIdleCheck();
   return true;
 }
@@ -876,11 +876,11 @@ function notify(baseUrl, event, data) {
 // ── processQueue ──────────────────────────────────────────────────────────────
 
 async function processQueue() {
-  // HUMAN_EXCLUSIVE (plus de VRAM dispo) ou HUMAN_ACTIVE (compat) → bloquer
+  // HUMAN_EXCLUSIVE (no more VRAM available) or HUMAN_ACTIVE (compat) → block
   if (state.mode==='HUMAN_EXCLUSIVE'||state.mode==='HUMAN_ACTIVE') return;
   if (!state.queue.length) return;
 
-  // HUMAN_SHARED → n'allouer que si la VRAM restante le permet
+  // HUMAN_SHARED → only allocate if remaining VRAM allows it
   const maxVramForAgents = state.mode==='HUMAN_SHARED'
     ? agentFreeVram()
     : Infinity;
@@ -902,13 +902,13 @@ async function processQueue() {
       if (!allocation.reuse||!loaded) {
         const model = MODELS[allocation.modelId];
         const gpus  = allocateVram(model.vram);
-        if (!gpus){log(`VRAM insuffisante pour ${allocation.modelId}`,'WARN'); continue;}
+        if (!gpus){log(`Insufficient VRAM for ${allocation.modelId}`,'WARN'); continue;}
         await loadModel(allocation.modelId);
         loaded={vram:model.vram,gpus,agentSlots:new Map(),loadedAt:Date.now()};
         state.loadedModels.set(allocation.modelId,loaded);
       }
       const model=MODELS[allocation.modelId];
-      if (loaded.agentSlots.size>=model.maxAgents){log(`${allocation.modelId} saturé`,'WARN'); continue;}
+      if (loaded.agentSlots.size>=model.maxAgents){log(`${allocation.modelId} saturated`,'WARN'); continue;}
       const slotId=`slot-${++slotCounter}`;
       loaded.agentSlots.set(slotId,task.taskId);
       const colocGroupId=task.parentGroup||findOrCreateColocGroup(task);
@@ -916,11 +916,11 @@ async function processQueue() {
       state.activeSlots.set(slotId,{taskId:task.taskId,modelId:allocation.modelId,role:task.role,score:task.score,repo:task.repo,issueId:task.issueId,branch:task.branch,colocGroup:colocGroupId,reservedAt:Date.now()});
       state.queue.splice(taskIdx,1);
       const used=loaded.agentSlots.size;
-      log(`✅ ${slotId}: ${task.taskId} → ${allocation.modelId} [score=${task.score} q=${model.quality} agents=${used}/${model.maxAgents} ${allocation.reuse?'réutilisé':'nouveau'} libre=${totalFree()}GB${colocGroupId?` coloc=${colocGroupId}`:''}]`);
+      log(`✅ ${slotId}: ${task.taskId} → ${allocation.modelId} [score=${task.score} q=${model.quality} agents=${used}/${model.maxAgents} ${allocation.reuse?'reused':'new'} free=${totalFree()}GB${colocGroupId?` coloc=${colocGroupId}`:''}]`);
       notify(ORCHESTRATOR_URL,'slot-ready',{taskId:task.taskId,slotId,modelId:allocation.modelId,gpus:loaded.gpus,colocGroup:colocGroupId,agentIndex:used-1});
-    } catch(e){log(`Erreur allocation ${task.taskId}: ${e.message}`,'WARN');}
+    } catch(e){log(`Error allocating ${task.taskId}: ${e.message}`,'WARN');}
   }
-  log(`VRAM: ${totalFree()}/${totalVram()}GB libre | actifs=${state.activeSlots.size} | queue=${state.queue.length}`);
+  log(`VRAM: ${totalFree()}/${totalVram()}GB free | active=${state.activeSlots.size} | queue=${state.queue.length}`);
 }
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
@@ -1012,7 +1012,7 @@ const server = http.createServer(async(req,res) => {
   if (req.method==='POST'&&url==='/chat/release') {
     const {slotId} = await readBody(req);
     const slot = state.chatSlots.get(slotId);
-    if (!slot) return json(res,404,{error:'chatSlot inconnu'});
+    if (!slot) return json(res,404,{error:'unknown chatSlot'});
     const loaded = state.loadedModels.get(slot.modelId);
     if (loaded) {
       loaded.agentSlots.delete(slotId);
@@ -1022,18 +1022,18 @@ const server = http.createServer(async(req,res) => {
       }
     }
     state.chatSlots.delete(slotId);
-    log(`🔓 chatSlot ${slotId} libéré (${slot.modelId}) | libre=${totalFree()}GB`);
-    // Libération d'un slot humain → peut libérer de la VRAM pour les agents
+    log(`🔓 chatSlot ${slotId} released (${slot.modelId}) | free=${totalFree()}GB`);
+    // Releasing a human slot → may free VRAM for agents
     setImmediate(()=>tryResumeAgents().catch(()=>{}));
     return json(res,200,{ok:true,totalFree:totalFree()});
   }
 
   // ── POST /chat/session/lock ───────────────────────────────────────────────
-  // Premier message d'une session — choisit et locke le modèle
+  // First message of a session — chooses and locks the model
   if (req.method==='POST'&&url==='/chat/session/lock') {
     const body = await readBody(req);
     const {sessionId, surface='chat', messages=[]} = body;
-    if (!sessionId) return json(res,400,{error:'sessionId requis'});
+    if (!sessionId) return json(res,400,{error:'sessionId required'});
     const session = await getOrCreateSession(sessionId, surface, messages);
     log(`/chat/session/lock ${sessionId} → ${session.modelId} (surface=${surface})`);
     return json(res,200,{
@@ -1046,13 +1046,13 @@ const server = http.createServer(async(req,res) => {
   }
 
   // ── POST /chat/session/score ──────────────────────────────────────────────
-  // Évalue chaque message dans le contexte de la session
-  // Retourne action: 'ok' | 'upgrade' | 'downgrade'
+  // Evaluates each message in session context
+  // Returns action: 'ok' | 'upgrade' | 'downgrade'
   if (req.method==='POST'&&url==='/chat/session/score') {
     const body = await readBody(req);
     const {sessionId, messages=[]} = body;
-    if (!sessionId) return json(res,400,{error:'sessionId requis'});
-    // Crée la session si elle n'existe pas encore (tolérance)
+    if (!sessionId) return json(res,400,{error:'sessionId required'});
+    // Create session if it doesn't exist yet (tolerance)
     if (!state.sessionModels.has(sessionId)) {
       const {surface='chat'} = body;
       await getOrCreateSession(sessionId, surface, messages);
@@ -1066,19 +1066,19 @@ const server = http.createServer(async(req,res) => {
   }
 
   // ── POST /chat/session/confirm ────────────────────────────────────────────
-  // L'utilisateur confirme un upgrade ou downgrade proposé
+  // User confirms a proposed upgrade or downgrade
   if (req.method==='POST'&&url==='/chat/session/confirm') {
     const body = await readBody(req);
     const {sessionId, direction} = body; // direction: 'upgrade' | 'downgrade'
-    if (!sessionId||!direction) return json(res,400,{error:'sessionId et direction requis'});
+    if (!sessionId||!direction) return json(res,400,{error:'sessionId and direction required'});
     const session = state.sessionModels.get(sessionId);
-    if (!session) return json(res,404,{error:'session inconnue'});
+    if (!session) return json(res,404,{error:'unknown session'});
 
     const targetModel = direction==='upgrade'
       ? session.pendingUpgrade
       : session.pendingDowngrade;
 
-    if (!targetModel) return json(res,409,{error:'aucun swap en attente de confirmation'});
+    if (!targetModel) return json(res,409,{error:'no swap awaiting confirmation'});
 
     const ok = await applySessionModelChange(sessionId, targetModel);
     const updated = state.sessionModels.get(sessionId);
@@ -1091,10 +1091,10 @@ const server = http.createServer(async(req,res) => {
   }
 
   // ── POST /chat/session/release ────────────────────────────────────────────
-  // Fin de session (idle timeout ou déconnexion)
+  // End of session (idle timeout or disconnect)
   if (req.method==='POST'&&url==='/chat/session/release') {
     const {sessionId} = await readBody(req);
-    if (!sessionId) return json(res,400,{error:'sessionId requis'});
+    if (!sessionId) return json(res,400,{error:'sessionId required'});
     await releaseSession(sessionId);
     return json(res,200,{ok:true,totalFree:totalFree()});
   }
@@ -1103,7 +1103,7 @@ const server = http.createServer(async(req,res) => {
   if (req.method==='POST'&&url==='/enqueue') {
     const body = await readBody(req);
     const {taskId,repo,issueId,role='dev',title='',issueBody='',labels=[],estimatedFiles=1,parentGroup,branch,forceScore} = body;
-    if (!taskId||!repo) return json(res,400,{error:'taskId et repo requis'});
+    if (!taskId||!repo) return json(res,400,{error:'taskId and repo required'});
     let score = forceScore!==undefined
       ? Math.max(0,Math.min(100,forceScore))
       : computeScore({title,body:issueBody,role,labels,estimatedFiles});
@@ -1126,7 +1126,7 @@ const server = http.createServer(async(req,res) => {
   if (req.method==='POST'&&url==='/release') {
     const {slotId} = await readBody(req);
     const slot = state.activeSlots.get(slotId);
-    if (!slot) return json(res,404,{error:'slot inconnu'});
+    if (!slot) return json(res,404,{error:'unknown slot'});
     const loaded=state.loadedModels.get(slot.modelId);
     if (loaded) {
       loaded.agentSlots.delete(slotId);
@@ -1137,8 +1137,8 @@ const server = http.createServer(async(req,res) => {
       if (g){g.slotIds=g.slotIds.filter(id=>id!==slotId); if(!g.slotIds.length) state.colocGroups.delete(slot.colocGroup);}
     }
     state.activeSlots.delete(slotId);
-    log(`🔓 ${slotId} libéré (${slot.modelId}) | libre=${totalFree()}GB`);
-    // En mode humain partagé, tenter de reprendre des tâches pausées
+    log(`🔓 ${slotId} released (${slot.modelId}) | free=${totalFree()}GB`);
+    // In shared human mode, try to resume paused tasks
     if (state.mode==='HUMAN_SHARED'||state.mode==='HUMAN_EXCLUSIVE') {
       setImmediate(()=>tryResumeAgents().catch(()=>{}));
     } else {
@@ -1159,14 +1159,14 @@ const server = http.createServer(async(req,res) => {
   // ── POST /human/heartbeat ─────────────────────────────────────────────────
   if (req.method==='POST'&&url==='/human/heartbeat') {
     const {surface} = await readBody(req);
-    if (!['chat','vscode'].includes(surface)) return json(res,400,{error:'surface: chat ou vscode'});
+    if (!['chat','vscode'].includes(surface)) return json(res,400,{error:'surface: chat or vscode'});
     return json(res,200, await handleHeartbeat(surface));
   }
 
   // ── POST /human/token-end ─────────────────────────────────────────────────
   if (req.method==='POST'&&url==='/human/token-end') {
     const switched=handleTokenEnd();
-    // Après chaque token, tenter de reprendre des agents si VRAM disponible
+    // After each token, try to resume agents if VRAM available
     if (state.mode==='HUMAN_SHARED'||state.mode==='HUMAN_EXCLUSIVE') {
       setImmediate(()=>tryResumeAgents().catch(()=>{}));
     }
@@ -1189,8 +1189,8 @@ const server = http.createServer(async(req,res) => {
 
 server.listen(PORT,'0.0.0.0',()=>{
   log(`GPU Scheduler v5 :${PORT} | ${totalVram()}GB VRAM | chat=${HUMAN_IDLE_CHAT_MS/60000}min agents=${HUMAN_IDLE_AGENT_MS/60000}min`);
-  log(`Modes: AGENT_ACTIVE → HUMAN_SHARED (cohabitation) → HUMAN_EXCLUSIVE (plus de place) | MIN_AGENT_VRAM=${MIN_AGENT_VRAM}GB`);
-  log(`Modèles: ${Object.entries(MODELS).map(([id,m])=>`${id}(${m.vram}GB q=${m.quality}×${m.maxAgents})`).join(' | ')}`);
+  log(`Modes: AGENT_ACTIVE → HUMAN_SHARED (cohabitation) → HUMAN_EXCLUSIVE (no room left) | MIN_AGENT_VRAM=${MIN_AGENT_VRAM}GB`);
+  log(`Models: ${Object.entries(MODELS).map(([id,m])=>`${id}(${m.vram}GB q=${m.quality}×${m.maxAgents})`).join(' | ')}`);
 });
 
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));

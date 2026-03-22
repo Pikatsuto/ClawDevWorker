@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"⚡","always":true}}
 user-invocable: true
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # cpu-status — CPU Fallback Status
 
 ## Automatic CPU fallback detection

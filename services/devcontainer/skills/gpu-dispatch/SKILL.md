@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"⚡","requires":{"bins":["node","curl"],"env":["
 user-invocable: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # gpu-dispatch — Fan-out isolated sub-agents
 
 ## When to use

@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 /**
- * spec-init.js — Orchestrateur /spec init dans le service CHAT
+ * spec-init.js — /spec init orchestrator in the CHAT service
  *
- * Flow complet :
- *   1. Vérifier token user (via user-tokens/<userId>.json)
- *   2. Créer le repo sur le compte du USER (private par défaut)
- *   3. Inviter le compte agent en collaborateur (write)
- *   4. Cloner le repo localement dans /tmp/spec-<repoName>
- *   5. Copier .coderclaw/rules.yaml et .devcontainer/devcontainer.json
- *   6. BMAD génère les artifacts (interactif ou batch)
+ * Full flow:
+ *   1. Verify user token (via user-tokens/<userId>.json)
+ *   2. Create the repo on the USER's account (private by default)
+ *   3. Invite the agent account as a collaborator (write)
+ *   4. Clone the repo locally into /tmp/spec-<repoName>
+ *   5. Copy .coderclaw/rules.yaml and .devcontainer/devcontainer.json
+ *   6. BMAD generates artifacts (interactive or batch)
  *      → _bmad-output/planning-artifacts/USER_STORIES.md
- *   7. Committer tout sur main
- *   8. Parser USER_STORIES.md → issues Forgejo avec dépendances
- *   9. POST /deps sur l'orchestrateur → DAG
- *  10. Les webhooks déclenchent le pipeline RBAC
+ *   7. Commit everything to main
+ *   8. Parse USER_STORIES.md → Forgejo issues with dependencies
+ *   9. POST /deps to the orchestrator → DAG
+ *  10. Webhooks trigger the RBAC pipeline
  *
- * Usage CLI (appelé par le skill) :
- *   node spec-init.js --name <nom> [--brief <brief.md>] [--public]
+ * CLI usage (called by the skill):
+ *   node spec-init.js --name <name> [--brief <brief.md>] [--public]
  *
- * Env :
- *   USER_ID                   identifiant du user
- *   GIT_PROVIDER_1_URL        URL Forgejo
- *   AGENT_GIT_LOGIN           login du compte agent (défaut: agent)
+ * Env:
+ *   USER_ID                   user identifier
+ *   GIT_PROVIDER_1_URL        Forgejo URL
+ *   AGENT_GIT_LOGIN           agent account login (default: agent)
  *   ORCHESTRATOR_URL          http://openclaw-agent:9001
  *   PROJECT_DATA_DIR          /projects
  */
@@ -44,7 +44,7 @@ const PROJECT_DATA_DIR = process.env.PROJECT_DATA_DIR || '/projects';
 const TOKEN_DIR  = path.join(process.env.HOME, '.openclaw', 'user-tokens');
 const TOKEN_FILE = path.join(TOKEN_DIR, `${USER_ID}.json`);
 
-// Templates embarqués dans l'image
+// Templates bundled in the image
 const RULES_TEMPLATE   = '/opt/devcontainer/defaults/coderclaw-rules.yaml';
 const DC_TEMPLATE      = '/opt/devcontainer/defaults/devcontainer.json';
 const BMAD_OUTPUT_DIR  = process.env.BMAD_OUTPUT_DIR || '/tmp/bmad-output';
@@ -52,7 +52,7 @@ const BMAD_OUTPUT_DIR  = process.env.BMAD_OUTPUT_DIR || '/tmp/bmad-output';
 function log(msg) { console.log(`[spec-init] ${msg}`); }
 function fail(msg) { console.error(`[spec-init] ❌ ${msg}`); process.exit(1); }
 
-// ── Helpers HTTP ──────────────────────────────────────────────────────────────
+// ── HTTP Helpers ─────────────────────────────────────────────────────────────
 function apiCall(method, urlStr, payload, token) {
   return new Promise((resolve, reject) => {
     const u    = new URL(urlStr);
@@ -83,51 +83,51 @@ function apiCall(method, urlStr, payload, token) {
   });
 }
 
-// ── 1. Charger le token user ──────────────────────────────────────────────────
+// ── 1. Load user token ───────────────────────────────────────────────────────
 function loadUserToken() {
   if (!fs.existsSync(TOKEN_FILE)) {
-    fail('Token git non configuré.\nUtilise /token set <token> pour enregistrer ton token Forgejo/GitHub.');
+    fail('Git token not configured.\nUse /token set <token> to register your Forgejo/GitHub token.');
   }
   const tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
   const token  = tokens.forgejo || tokens.github;
   if (!token) {
-    fail('Aucun token git trouvé.\nUtilise /token set forgejo <token> ou /token set github <token>.');
+    fail('No git token found.\nUse /token set forgejo <token> or /token set github <token>.');
   }
   return token;
 }
 
-// ── 2. Créer le repo sur le compte du USER ────────────────────────────────────
+// ── 2. Create the repo on the USER's account ─────────────────────────────────
 async function createRepo(userToken, name, description, isPrivate) {
-  log(`Création du repo "${name}" sur ton compte...`);
+  log(`Creating repo "${name}" on your account...`);
   const r = await apiCall('POST', `${PROVIDER_URL}/api/v1/user/repos`, {
     name, description, private: isPrivate, auto_init: true,
     default_branch: 'main',
   }, userToken);
 
   if (r.status === 201) {
-    log(`✓ Repo créé : ${r.data.full_name}`);
+    log(`✓ Repo created: ${r.data.full_name}`);
     return r.data;
   }
   if (r.status === 409) {
-    log(`⚠ Repo déjà existant — utilisation du repo existant`);
-    // Récupérer le repo existant
+    log(`⚠ Repo already exists — using existing repo`);
+    // Retrieve the existing repo
     const existing = await apiCall('GET', `${PROVIDER_URL}/api/v1/repos/${r.data.message?.match(/\w+\/\w+/)?.[0] || name}`,
       null, userToken);
     return existing.data;
   }
-  fail(`Erreur création repo (${r.status}) : ${JSON.stringify(r.data).slice(0, 200)}`);
+  fail(`Repo creation error (${r.status}): ${JSON.stringify(r.data).slice(0, 200)}`);
 }
 
-// ── 3. Récupérer le login user depuis le token ────────────────────────────────
+// ── 3. Retrieve user login from token ────────────────────────────────────────
 async function getUserLogin(userToken) {
   const r = await apiCall('GET', `${PROVIDER_URL}/api/v1/user`, null, userToken);
   if (r.status === 200) return r.data.login;
-  fail(`Token invalide (${r.status})`);
+  fail(`Invalid token (${r.status})`);
 }
 
-// ── 4. Inviter le compte agent en collaborateur ───────────────────────────────
+// ── 4. Invite the agent account as collaborator ──────────────────────────────
 async function inviteAgent(userToken, owner, repoName) {
-  log(`Invitation de @${AGENT_LOGIN} comme collaborateur...`);
+  log(`Inviting @${AGENT_LOGIN} as collaborator...`);
   const r = await apiCall(
     'PUT',
     `${PROVIDER_URL}/api/v1/repos/${owner}/${repoName}/collaborators/${AGENT_LOGIN}`,
@@ -135,17 +135,17 @@ async function inviteAgent(userToken, owner, repoName) {
     userToken
   );
   if (r.status === 204 || r.status === 200) {
-    log(`✓ @${AGENT_LOGIN} invité en collaborateur (write)`);
+    log(`✓ @${AGENT_LOGIN} invited as collaborator (write)`);
   } else {
-    log(`⚠ Invitation échouée (${r.status}) — tu devras ajouter @${AGENT_LOGIN} manuellement`);
+    log(`⚠ Invitation failed (${r.status}) — you will need to add @${AGENT_LOGIN} manually`);
   }
 }
 
-// ── 5. Configurer le webhook Forgejo → orchestrateur ─────────────────────────
+// ── 5. Configure the Forgejo webhook → orchestrator ─────────────────────────
 async function setupWebhook(userToken, owner, repoName) {
-  log(`Configuration du webhook...`);
-  // L'URL du webhook est l'URL interne de l'agent (accessible depuis le réseau Docker)
-  // En production, utiliser l'URL publique de l'agent si disponible
+  log(`Configuring webhook...`);
+  // The webhook URL is the agent's internal URL (accessible from the Docker network)
+  // In production, use the agent's public URL if available
   const webhookUrl = `http://openclaw-agent:9000/webhook`;
   const r = await apiCall(
     'POST',
@@ -164,15 +164,15 @@ async function setupWebhook(userToken, owner, repoName) {
     userToken
   );
   if (r.status === 201) {
-    log(`✓ Webhook configuré → ${webhookUrl}`);
+    log(`✓ Webhook configured → ${webhookUrl}`);
   } else {
-    log(`⚠ Webhook échoué (${r.status}) — configure-le manuellement dans Forgejo`);
+    log(`⚠ Webhook failed (${r.status}) — configure it manually in Forgejo`);
   }
 }
 
-// ── 6. Initialiser le repo avec les fichiers de base ─────────────────────────
+// ── 6. Initialize the repo with base files ───────────────────────────────────
 function initRepo(userToken, owner, repoName) {
-  log(`Clone du repo...`);
+  log(`Cloning repo...`);
   const cloneDir = `/tmp/spec-${repoName}-${Date.now()}`;
   const cloneUrl = `${PROVIDER_URL.replace('://', `://agent:${AGENT_TOKEN}@`)}/${owner}/${repoName}.git`;
 
@@ -180,12 +180,12 @@ function initRepo(userToken, owner, repoName) {
   execSync(`git -C ${cloneDir} config user.email "agent@clawdevworker.local"`);
   execSync(`git -C ${cloneDir} config user.name "CoderClaw Agent"`);
 
-  // Créer la structure de base
+  // Create the base structure
   fs.mkdirSync(`${cloneDir}/.coderclaw`, { recursive: true });
   fs.mkdirSync(`${cloneDir}/.devcontainer`, { recursive: true });
   fs.mkdirSync(`${cloneDir}/docs/spec`, { recursive: true });
 
-  // Copier les templates
+  // Copy the templates
   if (fs.existsSync(RULES_TEMPLATE)) {
     fs.copyFileSync(RULES_TEMPLATE, `${cloneDir}/.coderclaw/rules.yaml`);
   } else {
@@ -200,37 +200,37 @@ function initRepo(userToken, owner, repoName) {
   return cloneDir;
 }
 
-// ── 7. Copier les artifacts BMAD dans le repo ─────────────────────────────────
+// ── 7. Copy BMAD artifacts into the repo ──────────────────────────────────────
 function copyBmadArtifacts(cloneDir) {
   const srcDir = `${BMAD_OUTPUT_DIR}/planning-artifacts`;
   if (!fs.existsSync(srcDir)) {
-    fail(`Artifacts BMAD introuvables dans ${srcDir}.\nLance /bmad full d'abord.`);
+    fail(`BMAD artifacts not found in ${srcDir}.\nRun /bmad full first.`);
   }
   for (const file of ['product-brief.md', 'PRD.md', 'ARCHITECTURE.md', 'USER_STORIES.md']) {
     const src = path.join(srcDir, file);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, `${cloneDir}/docs/spec/${file}`);
-      log(`✓ ${file} copié`);
+      log(`✓ ${file} copied`);
     } else {
-      log(`⚠ ${file} absent — ignoré`);
+      log(`⚠ ${file} missing — skipped`);
     }
   }
 }
 
-// ── 8. Commit et push ─────────────────────────────────────────────────────────
+// ── 8. Commit and push ────────────────────────────────────────────────────────
 function commitAndPush(cloneDir, repoName) {
-  log(`Commit et push de la spec...`);
+  log(`Committing and pushing spec...`);
   execSync(`git -C ${cloneDir} add -A`);
   execSync(`git -C ${cloneDir} commit -m "chore: initialize project spec via BMAD"`);
   execSync(`git -C ${cloneDir} push origin main`);
-  log(`✓ Spec committée sur main`);
+  log(`✓ Spec committed to main`);
 }
 
-// ── 9. Créer les issues avec DAG ──────────────────────────────────────────────
+// ── 9. Create issues with DAG ─────────────────────────────────────────────────
 async function createIssuesFromStories(userToken, owner, repoName) {
   const storiesFile = `${BMAD_OUTPUT_DIR}/planning-artifacts/USER_STORIES.md`;
   if (!fs.existsSync(storiesFile)) {
-    log(`⚠ USER_STORIES.md absent — issues non créées`);
+    log(`⚠ USER_STORIES.md missing — issues not created`);
     return;
   }
 
@@ -248,7 +248,7 @@ async function createIssuesFromStories(userToken, owner, repoName) {
     const usNum     = hm[2];
     const bodyLines = lines.slice(1);
 
-    // Parser les dépendances "**Dépend de :** US-001, US-002"
+    // Parse dependencies "**Dépend de :** US-001, US-002"
     const deps = [];
     for (const line of bodyLines) {
       const dm = line.match(/\*\*[Dd]épend de\s*:\*\*\s*(.+)/);
@@ -264,17 +264,17 @@ async function createIssuesFromStories(userToken, owner, repoName) {
   }
 
   if (!stories.length) {
-    log(`⚠ Aucune story parsée depuis USER_STORIES.md`);
+    log(`⚠ No stories parsed from USER_STORIES.md`);
     return;
   }
 
-  log(`\nCréation de ${stories.length} issues sur ${owner}/${repoName}...`);
+  log(`\nCreating ${stories.length} issues on ${owner}/${repoName}...`);
   const usToIssue = {}; // usNum → issue number
 
   for (const story of stories) {
     const bodyText = story.body +
-      (story.deps.length ? `\n\n---\n**Dépend de :** ${story.deps.map(n => `#${n}`).join(', ')}` : '') +
-      `\n\n*Générée par \`/spec init\`*`;
+      (story.deps.length ? `\n\n---\n**Depends on:** ${story.deps.map(n => `#${n}`).join(', ')}` : '') +
+      `\n\n*Generated by \`/spec init\`*`;
 
     const r = await apiCall(
       'POST',
@@ -286,17 +286,17 @@ async function createIssuesFromStories(userToken, owner, repoName) {
     if (r.data?.number) {
       usToIssue[story.usNum] = r.data.number;
       log(`  ✓ #${r.data.number} ${story.fullTitle}` +
-        (story.deps.length ? ` [dépend de: ${story.deps.map(n => `US-${n}`).join(', ')}]` : ''));
+        (story.deps.length ? ` [depends on: ${story.deps.map(n => `US-${n}`).join(', ')}]` : ''));
     } else {
       log(`  ❌ ${story.fullTitle} : ${JSON.stringify(r.data).slice(0, 100)}`);
     }
     await new Promise(r => setTimeout(r, 500));
   }
 
-  // Enregistrer le DAG dans l'orchestrateur
+  // Register the DAG in the orchestrator
   const hasDeps = stories.filter(s => s.deps.length > 0);
   if (hasDeps.length > 0) {
-    log(`\nEnregistrement de ${hasDeps.length} dépendances...`);
+    log(`\nRegistering ${hasDeps.length} dependencies...`);
     for (const story of hasDeps) {
       const issueNum = usToIssue[story.usNum];
       if (!issueNum) continue;
@@ -327,55 +327,55 @@ async function main() {
   const brief = args.includes('--brief') ? args[args.indexOf('--brief') + 1] : null;
   const isPublic = args.includes('--public');
 
-  if (!name) fail('Usage : node spec-init.js --name <nom> [--brief <brief.md>] [--public]');
+  if (!name) fail('Usage: node spec-init.js --name <name> [--brief <brief.md>] [--public]');
 
   log(`\n=== /spec init "${name}" ===\n`);
 
   // 1. Token user
   const userToken = loadUserToken();
   const userLogin = await getUserLogin(userToken);
-  log(`✓ Connecté en tant que @${userLogin}`);
+  log(`✓ Logged in as @${userLogin}`);
 
-  // 2. Créer le repo
+  // 2. Create the repo
   const repo = await createRepo(userToken, name,
-    `Projet initialisé via clawdevworker`, !isPublic);
+    `Project initialized via clawdevworker`, !isPublic);
   const owner = repo.owner?.login || userLogin;
 
-  // 3. Inviter l'agent
+  // 3. Invite the agent
   await inviteAgent(userToken, owner, name);
 
-  // 4. Configurer le webhook
+  // 4. Configure the webhook
   await setupWebhook(userToken, owner, name);
 
-  // 5. Si mode batch, lancer BMAD headless
+  // 5. If batch mode, launch BMAD headless
   if (brief) {
-    log(`\nMode batch — brief : ${brief}`);
-    if (!fs.existsSync(brief)) fail(`Brief introuvable : ${brief}`);
-    // En mode batch, le BMAD tourne headless via le skill
-    // Le brief est copié dans le dossier BMAD output pour que l'agent le lise
+    log(`\nBatch mode — brief: ${brief}`);
+    if (!fs.existsSync(brief)) fail(`Brief not found: ${brief}`);
+    // In batch mode, BMAD runs headless via the skill
+    // The brief is copied to the BMAD output folder for the agent to read
     fs.mkdirSync(`${BMAD_OUTPUT_DIR}/planning-artifacts`, { recursive: true });
     fs.copyFileSync(brief, `${BMAD_OUTPUT_DIR}/planning-artifacts/product-brief.md`);
-    log(`Brief copié — l'agent BMAD va générer la spec de façon autonome`);
-    log(`Lance /bmad prd puis /bmad arch puis /bmad stories, ou /bmad full pour tout en une fois`);
+    log(`Brief copied — the BMAD agent will generate the spec autonomously`);
+    log(`Run /bmad prd then /bmad arch then /bmad stories, or /bmad full for everything at once`);
   } else {
-    log(`\nMode interactif — Lance /bmad full pour démarrer la spec`);
-    log(`Une fois la spec complète, lance /spec push ${owner}/${name} pour créer les issues`);
+    log(`\nInteractive mode — Run /bmad full to start the spec`);
+    log(`Once the spec is complete, run /spec push ${owner}/${name} to create the issues`);
   }
 
-  // Sauvegarder le contexte pour /spec push
+  // Save context for /spec push
   const ctxFile = path.join(process.env.HOME, '.openclaw', 'spec-context.json');
   fs.writeFileSync(ctxFile, JSON.stringify({
     owner, repoName: name, userToken: '***', fullName: `${owner}/${name}`,
     createdAt: new Date().toISOString(),
   }, null, 2));
 
-  log(`\nContexte sauvegardé. Repo : https://${new URL(PROVIDER_URL).hostname}/${owner}/${name}`);
+  log(`\nContext saved. Repo: https://${new URL(PROVIDER_URL).hostname}/${owner}/${name}`);
 }
 
-// ── Mode "push" — appelé après BMAD ──────────────────────────────────────────
+// ── "push" mode — called after BMAD ──────────────────────────────────────────
 async function push(ownerRepo) {
   const [owner, repoName] = ownerRepo.split('/');
-  if (!owner || !repoName) fail('Format attendu : owner/repo');
+  if (!owner || !repoName) fail('Expected format: owner/repo');
 
   const userToken = loadUserToken();
   const cloneDir  = initRepo(userToken, owner, repoName);
@@ -384,10 +384,10 @@ async function push(ownerRepo) {
 
   const result = await createIssuesFromStories(userToken, owner, repoName);
 
-  log(`\n✅ /spec init terminé !`);
+  log(`\n✅ /spec init completed!`);
   log(`  Repo       : ${PROVIDER_URL}/${owner}/${repoName}`);
-  log(`  Issues     : ${result?.issues || 0} créées`);
-  log(`  Pipeline   : démarrage automatique via webhook`);
+  log(`  Issues     : ${result?.issues || 0} created`);
+  log(`  Pipeline   : automatic start via webhook`);
 }
 
 // CLI dispatch

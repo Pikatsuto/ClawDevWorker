@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * mcp-docs — Serveur MCP de recherche de documentation
+ * mcp-docs — MCP documentation search server
  *
- * Cascade par ordre de priorité :
- *   1. DevDocs self-hosted  → API propre, 100+ docs, zéro réseau externe
- *   2. APIs officielles     → uniquement les domaines NON couverts par DevDocs
- *   3. SearXNG + nodriver   → uniquement les domaines NON couverts par les niveaux 1+2
+ * Cascade by priority order:
+ *   1. Self-hosted DevDocs  → own API, 100+ docs, zero external network
+ *   2. Official APIs        → only domains NOT covered by DevDocs
+ *   3. SearXNG + nodriver   → only domains NOT covered by levels 1+2
  *
- * Règle fondamentale : si un domaine est couvert par le niveau N,
- * il est exclu des niveaux N+1, N+2... On ne fetche jamais deux fois la même source.
+ * Fundamental rule: if a domain is covered by level N,
+ * it is excluded from levels N+1, N+2... We never fetch the same source twice.
  */
 
 const http  = require('http');
@@ -19,10 +19,10 @@ const SEARXNG_URL   = process.env.SEARXNG_URL   || 'http://searxng:8080';
 const NODRIVER_URL  = process.env.NODRIVER_URL  || 'http://browserless:3000';
 const MAX_RESULTS   = parseInt(process.env.MAX_RESULTS  || '5');
 const FETCH_TIMEOUT = parseInt(process.env.FETCH_TIMEOUT || '8000');
-const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '';  // optionnel — 60 req/h sans, 5000 avec
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '';  // optional — 60 req/h without, 5000 with
 
-// ── Niveau 1 : domaines couverts par DevDocs ──────────────────────────────────
-// Exclus des niveaux 2 et 3.
+// ── Level 1: domains covered by DevDocs ──────────────────────────────────────
+// Excluded from levels 2 and 3.
 const DEVDOCS_DOMAINS = new Set([
   // Web & standards
   'developer.mozilla.org','w3.org','whatwg.org','tc39.es',
@@ -48,38 +48,38 @@ const DEVDOCS_DOMAINS = new Set([
   'swift.org','docs.swift.org','dart.dev','api.flutter.dev',
   // Elixir / Haskell / Scala / Erlang
   'elixir-lang.org','hexdocs.pm','haskell.org','scala-lang.org','erlang.org',
-  // Frameworks frontend
+  // Frontend frameworks
   'vuejs.org','react.dev','angular.dev','svelte.dev','solidjs.com','alpinejs.dev',
   'astro.build','nuxt.com','nextjs.org','remix.run','vitejs.dev',
   'esbuild.github.io','rollupjs.org','webpack.js.org','parceljs.org','turbo.build',
   'emberjs.com','backbonejs.org',
   // CSS
   'tailwindcss.com','getbootstrap.com','bulma.io','sass-lang.com','postcss.org','lesscss.org',
-  // Librairies JS dans DevDocs
+  // JS libraries in DevDocs
   'lodash.com','underscorejs.org','momentjs.com','day.js.org','date-fns.org',
   'rxjs.dev','reactivex.io','d3js.org',
   'jestjs.io','vitest.dev','playwright.dev','cypress.io','testing-library.com',
   'mochajs.org','chaijs.com','sinonjs.org','greensock.com',
-  // Frameworks backend dans DevDocs
+  // Backend frameworks in DevDocs
   'expressjs.com','fastapi.tiangolo.com','flask.palletsprojects.com',
   'djangoproject.com','docs.djangoproject.com','django-rest-framework.org',
   'fastify.dev','nestjs.com','hono.dev','koajs.com','hapijs.com',
-  // BDD dans DevDocs
+  // Databases in DevDocs
   'postgresql.org','www.postgresql.org','mysql.com','dev.mysql.com',
   'sqlite.org','redis.io','mongodb.com','docs.mongodb.com',
-  // DevOps dans DevDocs
+  // DevOps in DevDocs
   'docs.docker.com','kubernetes.io','helm.sh','nginx.org','nginx.com',
   'apache.org','httpd.apache.org',
-  // GNU/Linux dans DevDocs
+  // GNU/Linux in DevDocs
   'gnu.org','www.gnu.org','man7.org','linux.die.net','git-scm.com','curl.se',
-  // AI/ML dans DevDocs
+  // AI/ML in DevDocs
   'pytorch.org','tensorflow.org',
-  // Outils dans DevDocs
+  // Tools in DevDocs
   'pnpm.io','yarnpkg.com','docs.npmjs.com','babeljs.io','eslint.org','prettier.io','biomejs.dev',
 ]);
 
-// ── Niveau 2 : domaines couverts par APIs officielles ─────────────────────────
-// Exclus du niveau 3 (en plus de DEVDOCS_DOMAINS).
+// ── Level 2: domains covered by official APIs ────────────────────────────────
+// Excluded from level 3 (in addition to DEVDOCS_DOMAINS).
 const API_DOMAINS = new Set([
   'npmjs.com','www.npmjs.com','registry.npmjs.org',
   'pypi.org','files.pythonhosted.org',
@@ -89,8 +89,8 @@ const API_DOMAINS = new Set([
   'readthedocs.io','readthedocs.org',
 ]);
 
-// ── Niveau 3 : domaines autorisés au fetch nodriver ──────────────────────────
-// Sites officiels tolérant le scraping, NON couverts par les niveaux 1 et 2.
+// ── Level 3: domains allowed for nodriver fetch ──────────────────────────────
+// Official sites tolerating scraping, NOT covered by levels 1 and 2.
 const LEVEL3_FETCH_DOMAINS = new Set([
   // Java / JVM frameworks
   'spring.io','docs.spring.io','quarkus.io','micronaut.io','vertx.io',
@@ -98,41 +98,41 @@ const LEVEL3_FETCH_DOMAINS = new Set([
   'ktor.io',
   // C / C++ / LLVM
   'clang.llvm.org','llvm.org',
-  // Rust non couvert par docs.rs
+  // Rust not covered by docs.rs
   'rust-unofficial.github.io',
   // Go modules
   'go.googlesource.com',
-  // Frameworks backend non dans DevDocs
+  // Backend frameworks not in DevDocs
   'axum.rs','actix.rs','rocket.rs','gin-gonic.com','echo.labstack.com','fiber.wiki',
   'gorilla.github.io','beego.me','aiohttp.readthedocs.io','starlette.io',
   'tortoise-orm.readthedocs.io','pydantic-docs.helpmanual.io','docs.pydantic.dev',
-  // BDD non dans DevDocs
+  // Databases not in DevDocs
   'clickhouse.com','clickhouse.tech','timescale.com','docs.timescale.com',
   'cassandra.apache.org','neo4j.com','docs.neo4j.com',
   'supabase.com','prisma.io','drizzle.team','typeorm.io',
   'sequelize.org','knexjs.org','mikro-orm.io',
   'sqlalchemy.org','docs.sqlalchemy.org','peewee-orm.com',
-  // DevOps non dans DevDocs
+  // DevOps not in DevDocs
   'terraform.io','developer.hashicorp.com','ansible.com','docs.ansible.com',
   'traefik.io','doc.traefik.io','caddyserver.com',
   'prometheus.io','grafana.com','opentelemetry.io','jaegertracing.io',
   'www.consul.io','www.vaultproject.io','packer.io','www.vagrantup.com',
   'fluxcd.io','argo-cd.readthedocs.io',
-  // Cloud (docs publiques)
+  // Cloud (public docs)
   'cloud.google.com','docs.aws.amazon.com',
   'learn.microsoft.com','docs.microsoft.com','azure.microsoft.com',
   // CI/CD
   'docs.github.com','docs.gitlab.com',
   'circleci.com','docs.circleci.com','www.jenkins.io','docs.drone.io','woodpecker-ci.org',
-  // Librairies JS non dans DevDocs
+  // JS libraries not in DevDocs
   'zod.dev','trpc.io','tanstack.com','swr.vercel.app',
   'zustand-demo.pmnd.rs','jotai.org','valtio.pmnd.rs','mobx.js.org',
   'redux.js.org','immerjs.github.io','socket.io','axios-http.com',
   'formik.org','react-hook-form.com',
-  // AI/ML non dans DevDocs
+  // AI/ML not in DevDocs
   'huggingface.co','docs.llamaindex.ai','python.langchain.com','ollama.com',
   'scikit-learn.org','keras.io','numpy.org','pandas.pydata.org','matplotlib.org',
-  // Outils
+  // Tools
   'jqlang.github.io','stedolan.github.io','tldp.org',
   'ecma-international.org','whatwg.org','tc39.es','w3.org',
   'rubygems.org',
@@ -177,20 +177,20 @@ function fetchText(url) {
   });
 }
 
-// ── Niveau 1 : DevDocs ────────────────────────────────────────────────────────
-// DevDocs n'a PAS d'API REST de recherche côté serveur — la recherche est
-// entièrement client-side. Ce qui existe vraiment sur le serveur Sinatra :
-//   GET /docs/<slug>/index.json  → liste des entrées du docset (name, path, type)
-//   GET /docs/<slug>/<path>.html → contenu HTML d'une page
+// ── Level 1: DevDocs ──────────────────────────────────────────────────────────
+// DevDocs does NOT have a server-side REST search API — search is
+// entirely client-side. What actually exists on the Sinatra server:
+//   GET /docs/<slug>/index.json  → list of docset entries (name, path, type)
+//   GET /docs/<slug>/<path>.html → HTML content of a page
 //
-// Stratégie :
-//   1. Charger le manifest global : GET / renvoie le HTML avec les slugs dispo,
-//      ou on utilise une liste statique des docsets courants les plus utiles.
-//   2. Pour chaque docset candidat, charger son index.json et filtrer par query.
-//   3. Fetcher le HTML des entrées matchantes, en extraire le texte.
+// Strategy:
+//   1. Load the global manifest: GET / returns the HTML with available slugs,
+//      or we use a static list of the most useful common docsets.
+//   2. For each candidate docset, load its index.json and filter by query.
+//   3. Fetch the HTML of matching entries, extract the text.
 
-// Liste des docsets DevDocs prioritaires à interroger en premier.
-// Correspondance slug DevDocs → catégorie. Ordre = priorité de recherche.
+// Priority list of DevDocs docsets to query first.
+// DevDocs slug → category mapping. Order = search priority.
 const DEVDOCS_SLUGS = [
   // Web & standards
   'html', 'css', 'javascript', 'dom', 'http', 'web_extensions',
@@ -213,32 +213,32 @@ const DEVDOCS_SLUGS = [
   'kotlin', 'swift', 'dart~3',
   // C / C++
   'c', 'cpp',
-  // Frameworks frontend
+  // Frontend frameworks
   'vue~3', 'react', 'angular', 'svelte', 'astro', 'nuxt~3',
   'next.js', 'vite', 'webpack~5',
   // CSS frameworks
   'tailwindcss', 'bootstrap~5', 'sass',
-  // Librairies JS
+  // JS libraries
   'lodash~4', 'd3~7', 'moment', 'rxjs', 'jest', 'vitest',
   'playwright', 'cypress', 'mocha', 'chai',
-  // Frameworks backend
+  // Backend frameworks
   'express', 'fastapi', 'django', 'flask', 'fastify', 'nest',
-  // Bases de données
+  // Databases
   'postgresql~16', 'mysql', 'sqlite', 'redis',
   // MongoDB
   // DevOps
   'docker', 'kubernetes', 'nginx', 'apache_http_server',
-  // Git / outils
+  // Git / tools
   'git', 'gnu_bash', 'gnu_make', 'curl',
   // AI/ML
   'pytorch', 'tensorflow~2',
-  // Autres outils
+  // Other tools
   'eslint', 'prettier', 'babel',
   // Linux man pages
   'man', 'linux',
 ];
 
-// Cache des index DevDocs (slug → [{name, path, type}])
+// DevDocs index cache (slug → [{name, path, type}])
 const _devdocsIndexCache = new Map();
 
 async function fetchDevDocsIndex(slug) {
@@ -254,15 +254,15 @@ async function fetchDevDocsIndex(slug) {
   }
 }
 
-// Recherche fuzzy simple : vérifie si tous les mots de la query sont dans le nom
+// Simple fuzzy search: checks if all query words are in the name
 function matchesQuery(entryName, query) {
   const name = entryName.toLowerCase();
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  // Match exact en premier
+  // Exact match first
   if (name.includes(query.toLowerCase())) return 2;
-  // Match tous les mots
+  // Match all words
   if (words.every(w => name.includes(w))) return 1;
-  // Match partiel (premier mot)
+  // Partial match (first word)
   if (words.length > 0 && name.includes(words[0])) return 0.5;
   return 0;
 }
@@ -270,8 +270,8 @@ function matchesQuery(entryName, query) {
 async function searchDevDocs(query) {
   const candidates = []; // { slug, entry, score }
 
-  // Phase 1 : chercher dans les index de chaque docset (en parallèle par batch)
-  const BATCH = 8; // charger 8 index à la fois
+  // Phase 1: search in each docset index (in parallel by batch)
+  const BATCH = 8; // load 8 indexes at a time
   for (let i = 0; i < DEVDOCS_SLUGS.length; i += BATCH) {
     const batch = DEVDOCS_SLUGS.slice(i, i + BATCH);
     const results = await Promise.allSettled(
@@ -283,17 +283,17 @@ async function searchDevDocs(query) {
         }
       })
     );
-    // Arrêter dès qu'on a assez de bons résultats (score 2 = match exact)
+    // Stop once we have enough good results (score 2 = exact match)
     if (candidates.filter(c => c.score === 2).length >= MAX_RESULTS) break;
   }
 
   if (candidates.length === 0) return [];
 
-  // Phase 2 : trier par score décroissant, prendre les meilleurs
+  // Phase 2: sort by descending score, take the best
   candidates.sort((a, b) => b.score - a.score);
   const top = candidates.slice(0, MAX_RESULTS);
 
-  // Phase 3 : fetcher le contenu HTML de chaque entrée
+  // Phase 3: fetch the HTML content of each entry
   const results = [];
   for (const { slug, entry } of top) {
     let content = '';
@@ -301,7 +301,7 @@ async function searchDevDocs(query) {
     const publicUrl = `https://devdocs.io/${slug}/${entry.path}`;
     try {
       const html = await fetchText(pageUrl);
-      // Extraire le texte brut depuis le HTML (supprimer balises, scripts, styles)
+      // Extract plain text from HTML (remove tags, scripts, styles)
       content = html
         .replace(/<script[\s\S]*?<\/script>/gi, '')
         .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -323,7 +323,7 @@ async function searchDevDocs(query) {
   return results;
 }
 
-// ── Niveau 2 : APIs officielles ───────────────────────────────────────────────
+// ── Level 2: Official APIs ────────────────────────────────────────────────────
 const OFFICIAL_APIS = [
   {
     name: 'MDN', domain: 'developer.mozilla.org',
@@ -367,7 +367,7 @@ const OFFICIAL_APIS = [
 async function searchOfficialApis(query) {
   const results = [];
   for (const api of OFFICIAL_APIS) {
-    // Skip si couvert par DevDocs
+    // Skip if covered by DevDocs
     if (DEVDOCS_DOMAINS.has(api.domain)) continue;
     try {
       const data = await fetchJson(api.search(query), { headers: api.headers });
@@ -378,7 +378,7 @@ async function searchOfficialApis(query) {
   return results.slice(0, MAX_RESULTS);
 }
 
-// ── Niveau 3 : SearXNG + nodriver ────────────────────────────────────────────
+// ── Level 3: SearXNG + nodriver ───────────────────────────────────────────────
 async function searchWeb(query) {
   let raw = [];
   try {
@@ -391,12 +391,12 @@ async function searchWeb(query) {
   for (const r of raw) {
     const domain = getDomain(r.url);
 
-    // Exclure tout ce qui est couvert par les niveaux 1 et 2
+    // Exclude everything covered by levels 1 and 2
     if (DEVDOCS_DOMAINS.has(domain) || API_DOMAINS.has(domain)) continue;
 
     let content = r.content || '';
 
-    // Fetch nodriver uniquement sur domaines whitelist niveau 3
+    // Fetch nodriver only on level 3 whitelisted domains
     if (LEVEL3_FETCH_DOMAINS.has(domain)) {
       try {
         const html = await fetchText(`${NODRIVER_URL}/content?url=${encodeURIComponent(r.url)}&timeout=${FETCH_TIMEOUT}`);
@@ -413,13 +413,13 @@ async function searchWeb(query) {
   return results;
 }
 
-// ── Orchestrateur ─────────────────────────────────────────────────────────────
+// ── Orchestrator ──────────────────────────────────────────────────────────────
 async function searchDocs(query) {
   let results = await searchDevDocs(query);
   if (results.length > 0) return { results, level: 1, source: 'DevDocs' };
 
   results = await searchOfficialApis(query);
-  if (results.length > 0) return { results, level: 2, source: 'APIs officielles' };
+  if (results.length > 0) return { results, level: 2, source: 'Official APIs' };
 
   results = await searchWeb(query);
   return { results, level: 3, source: 'Web (SearXNG + nodriver)' };
@@ -429,15 +429,15 @@ async function searchDocs(query) {
 const TOOLS = [{
   name: 'search_docs',
   description: [
-    'Recherche documentation — cascade 3 niveaux (filtrage strict par couverture) :',
-    '1. DevDocs self-hosted : JS/TS, Python, Rust, Go, Ruby, PHP, Java, Docker, React, Vue, Django...',
-    '2. APIs officielles : npm, PyPI, crates.io, GitHub, Docker Hub, ReadTheDocs',
-    '   (skippé si domaine déjà couvert par DevDocs)',
-    '3. SearXNG (DuckDuckGo/Brave/Qwant) + nodriver sur sites officiels hors niveaux 1-2',
+    'Documentation search — 3-level cascade (strict filtering by coverage):',
+    '1. Self-hosted DevDocs: JS/TS, Python, Rust, Go, Ruby, PHP, Java, Docker, React, Vue, Django...',
+    '2. Official APIs: npm, PyPI, crates.io, GitHub, Docker Hub, ReadTheDocs',
+    '   (skipped if domain already covered by DevDocs)',
+    '3. SearXNG (DuckDuckGo/Brave/Qwant) + nodriver on official sites outside levels 1-2',
   ].join('\n'),
   inputSchema: {
     type: 'object',
-    properties: { query: { type: 'string', description: 'Requête de recherche' } },
+    properties: { query: { type: 'string', description: 'Search query' } },
     required: ['query'],
   },
 }];
@@ -465,9 +465,9 @@ async function handle(line) {
     try {
       const { results, level, source } = await searchDocs(params.arguments.query);
       const text = results.length === 0
-        ? `Aucun résultat pour : "${params.arguments.query}"`
-        : [`# Résultats : "${params.arguments.query}"`, `_${source} — niveau ${level}_`, '',
-            ...results.map((r,i) => `## ${i+1}. ${r.title}\n**URL** : ${r.url}\n\n${(r.content||r.excerpt||'').slice(0,1200)}\n`)
+        ? `No results for: "${params.arguments.query}"`
+        : [`# Results: "${params.arguments.query}"`, `_${source} — level ${level}_`, '',
+            ...results.map((r,i) => `## ${i+1}. ${r.title}\n**URL**: ${r.url}\n\n${(r.content||r.excerpt||'').slice(0,1200)}\n`)
           ].join('\n');
       process.stdout.write(mRes(id, { content: [{ type:'text', text }] }));
     } catch (e) { process.stdout.write(mErr(id, -32603, e.message)); }

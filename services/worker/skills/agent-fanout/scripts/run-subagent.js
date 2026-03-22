@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * run-subagent.js — Sub-agent OpenClaw pour une sous-tâche agent-fanout
+ * run-subagent.js — OpenClaw sub-agent for an agent-fanout subtask
  *
- * Variables d'env requises :
+ * Required environment variables:
  *   FORGEJO_TOKEN, FORGEJO_URL, REPO, ISSUE_ID
- *   PARENT_BRANCH  — branche principale de l'issue
- *   SUB_BRANCH     — branche de travail de ce sub-agent
- *   TASK_DESC      — description de la sous-tâche
+ *   PARENT_BRANCH  — main branch of the issue
+ *   SUB_BRANCH     — working branch for this sub-agent
+ *   TASK_DESC      — subtask description
  *   TASK_TYPE      — feat | fix | refactor | test | docs
  *   OLLAMA_MODEL, OLLAMA_BASE_URL, OLLAMA_CPU_URL
  *   SCHEDULER_URL, SLOT_ID
- *   EPHEMERAL_DIR  — dossier éphémère en écriture pour ce sub-agent
- *   RESULT_FILE    — chemin où écrire le résultat JSON
+ *   EPHEMERAL_DIR  — ephemeral writable directory for this sub-agent
+ *   RESULT_FILE    — path where to write the JSON result
  */
 
 'use strict';
@@ -40,7 +40,7 @@ const WORKSPACE = `/workspace/${REPO.split('/')[1] || 'repo'}`;
 
 const log = msg => console.log(`[subagent/${SUB_BRANCH}] ${new Date().toISOString()} ${msg}`);
 
-// ── Libération slot GPU à la sortie ──────────────────────────────────────────
+// ── Release GPU slot on exit ─────────────────────────────────────────────────
 process.on('exit', () => {
   if (SLOT_ID) {
     try {
@@ -125,14 +125,14 @@ function writeResult(data) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  log(`Démarrage sub-agent : ${SUB_BRANCH}`);
-  log(`Tâche : ${TASK_DESC}`);
-  log(`Modèle : ${OLLAMA_MODEL}`);
+  log(`Starting sub-agent: ${SUB_BRANCH}`);
+  log(`Task: ${TASK_DESC}`);
+  log(`Model: ${OLLAMA_MODEL}`);
 
   fs.mkdirSync(EPHEMERAL_DIR, { recursive: true });
 
   try {
-    // ── 1. Checkout de la branche de travail ─────────────────────────────────
+    // ── 1. Checkout the working branch ────────────────────────────────────────
     log(`Checkout ${SUB_BRANCH}...`);
     git(['fetch', 'origin', SUB_BRANCH], { allowFail: true });
     try {
@@ -142,69 +142,69 @@ async function main() {
       git(['checkout', '-b', SUB_BRANCH]);
     }
 
-    // ── 2. Lire le contexte du repo ───────────────────────────────────────────
-    log('Lecture du contexte repo...');
+    // ── 2. Read the repo context ──────────────────────────────────────────────
+    log('Reading repo context...');
     let bmadContext = '';
     for (const dir of ['docs/bmad', '.bmad', 'bmad']) {
       const bmadPath = path.join(WORKSPACE, dir);
       if (fs.existsSync(bmadPath)) {
         const files = fs.readdirSync(bmadPath).filter(f => f.endsWith('.md'));
         bmadContext = files.map(f => fs.readFileSync(path.join(bmadPath, f), 'utf8')).join('\n\n').slice(0, 6000);
-        log(`Contexte BMAD : ${dir}/ (${bmadContext.length} chars)`);
+        log(`BMAD context: ${dir}/ (${bmadContext.length} chars)`);
         break;
       }
     }
 
-    // Liste des fichiers du repo pour le contexte
+    // List repo files for context
     let repoTree = '';
     try {
       repoTree = git(['ls-tree', '-r', '--name-only', 'HEAD']).split('\n').slice(0, 80).join('\n');
     } catch {}
 
-    // ── 3. Premier appel Ollama — plan d'action ───────────────────────────────
-    log('Appel Ollama — plan d\'action...');
+    // ── 3. First Ollama call — action plan ─────────────────────────────────────
+    log('Ollama call — action plan...');
 
-    const systemPrompt = `Tu es un agent de développement autonome spécialisé sur une sous-tâche précise.
+    const systemPrompt = `You are an autonomous development agent specialized on a specific subtask.
 
-Repo : ${REPO}
-Issue parent : #${ISSUE_ID}
-Ta branche de travail : ${SUB_BRANCH}
-Ton dossier éphémère (écriture scratchpad) : ${EPHEMERAL_DIR}
+Repo: ${REPO}
+Parent issue: #${ISSUE_ID}
+Your working branch: ${SUB_BRANCH}
+Your ephemeral directory (scratchpad writes): ${EPHEMERAL_DIR}
 
-# Règles git flow
-- Commits atomiques avec messages conventionnels (feat:, fix:, refactor:, test:, docs:)
-- git add UNIQUEMENT les fichiers de ce changement
-- Push sur ${SUB_BRANCH} uniquement
-- Ne jamais pousser sur main ou ${PARENT_BRANCH}
-- Ne jamais merger de PR
+# Git flow rules
+- Atomic commits with conventional messages (feat:, fix:, refactor:, test:, docs:)
+- git add ONLY the files for this change
+- Push to ${SUB_BRANCH} only
+- Never push to main or ${PARENT_BRANCH}
+- Never merge PRs
 
-# Sécurité
-- Lecture : tous les fichiers du repo
-- Écriture fichiers : uniquement via git sur ${SUB_BRANCH}
-- Scratchpad temp : ${EPHEMERAL_DIR} (nettoyé après)
-- Réseau : Forgejo + Ollama uniquement${bmadContext ? `\n\n# Contexte projet (BMAD)\n${bmadContext}` : ''}`;
+# Security
+- Read: all repo files
+- File writes: only via git on ${SUB_BRANCH}
+- Temp scratchpad: ${EPHEMERAL_DIR} (cleaned up afterwards)
+- Network: Forgejo + Ollama only${bmadContext ? `\n\n# Project context (BMAD)\n${bmadContext}` : ''}`;
 
     const planMessages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user',   content: `Sous-tâche à réaliser : ${TASK_DESC}
+      { role: 'user',   content: `Subtask to implement: ${TASK_DESC}
 
-Fichiers du repo :
+Repo files:
 ${repoTree}
 
-1. Analyse ce qui doit être fait exactement
-2. Liste les fichiers à créer ou modifier
-3. Planifie les commits atomiques (un par changement logique)
-4. Dis "PRÊT" quand tu as ton plan complet` },
+1. Analyze what needs to be done exactly
+2. List the files to create or modify
+3. Plan the atomic commits (one per logical change)
+4. Say "READY" when you have your complete plan` },
     ];
 
     const plan = await ollamaChat(planMessages);
-    log(`Plan reçu (${plan.length} chars)`);
+    log(`Plan received (${plan.length} chars)`);
 
     const conversationHistory = [...planMessages, { role: 'assistant', content: plan }];
 
-    // ── 4. Boucle d'implémentation ────────────────────────────────────────────
-    // L'agent itère : analyse → code → commit → test → commit...
-    // Maximum 8 tours pour éviter les boucles infinies
+    // ── 4. Implementation loop ────────────────────────────────────────────────
+    // The agent iterates: analyze → code → commit → test → commit...
+    // Maximum 8 rounds to avoid infinite loops
     let done       = false;
     let prNumber   = null;
     let summary    = '';
@@ -213,33 +213,33 @@ ${repoTree}
 
     while (!done && iterations < MAX_ITER) {
       iterations++;
-      log(`Itération ${iterations}/${MAX_ITER}...`);
+      log(`Iteration ${iterations}/${MAX_ITER}...`);
 
       conversationHistory.push({
         role: 'user',
         content: iterations === 1
-          ? `Maintenant implémente. Pour chaque fichier que tu modifies :
-1. Utilise file.write pour écrire le contenu
-2. Ensuite git add + git commit atomique
-3. Continue avec le fichier suivant
+          ? `Now implement. For each file you modify:
+1. Use file.write to write the content
+2. Then git add + atomic git commit
+3. Continue with the next file
 
-Quand tout est commité, tape "COMMITS_DONE" et je créerai la PR.`
-          : `Continue l'implémentation. Dis "COMMITS_DONE" quand tous tes commits sont poussés.`,
+When everything is committed, type "COMMITS_DONE" and I will create the PR.`
+          : `Continue the implementation. Say "COMMITS_DONE" when all your commits are pushed.`,
       });
 
       const reply = await ollamaChat(conversationHistory);
       conversationHistory.push({ role: 'assistant', content: reply });
-      log(`Réponse iteration ${iterations} : ${reply.slice(0, 200)}...`);
+      log(`Response iteration ${iterations}: ${reply.slice(0, 200)}...`);
 
-      // Détecter si l'agent a terminé
+      // Detect if the agent has finished
       if (reply.includes('COMMITS_DONE') || reply.includes('terminé') || reply.includes('done')) {
         done    = true;
         summary = reply;
-        log('Agent signale la fin des commits');
+        log('Agent signals end of commits');
       }
     }
 
-    // ── 5. Push final + PR atomique ───────────────────────────────────────────
+    // ── 5. Final push + atomic PR ─────────────────────────────────────────────
     log(`Push ${SUB_BRANCH}...`);
     try {
       git(['push', 'origin', SUB_BRANCH, '--set-upstream']);
@@ -248,28 +248,28 @@ Quand tout est commité, tape "COMMITS_DONE" et je créerai la PR.`
       git(['push', '-f', 'origin', SUB_BRANCH], { allowFail: true });
     }
 
-    // Vérifier s'il y a des commits à pousser (diff avec parent)
+    // Check if there are commits to push (diff with parent)
     const commitCount = git(['rev-list', '--count', `origin/${PARENT_BRANCH}..HEAD`], { allowFail: true });
     if (!commitCount || commitCount === '0') {
-      log('Aucun commit — sous-tâche vide ou déjà à jour');
-      writeResult({ status: 'skipped', summary: 'Aucun commit produit', prNumber: null });
+      log('No commits — subtask empty or already up to date');
+      writeResult({ status: 'skipped', summary: 'No commits produced', prNumber: null });
       return;
     }
 
-    log(`${commitCount} commit(s) sur ${SUB_BRANCH} — création PR...`);
+    log(`${commitCount} commit(s) on ${SUB_BRANCH} — creating PR...`);
 
-    // Créer la PR vers PARENT_BRANCH
+    // Create the PR targeting PARENT_BRANCH
     const pr = await forgejoReq('POST', `/api/v1/repos/${REPO}/pulls`, {
       title: `${TASK_TYPE}(${SUB_BRANCH.split('/').pop()}): ${TASK_DESC.slice(0, 60)}`,
-      body:  `## Sous-tâche de l'issue #${ISSUE_ID}\n\n${TASK_DESC}\n\n${summary ? `## Résumé\n${summary}` : ''}\n\nPart of #${ISSUE_ID}`,
+      body:  `## Subtask of issue #${ISSUE_ID}\n\n${TASK_DESC}\n\n${summary ? `## Summary\n${summary}` : ''}\n\nPart of #${ISSUE_ID}`,
       head:  SUB_BRANCH,
       base:  PARENT_BRANCH,
     });
 
     prNumber = pr?.number ?? null;
-    log(`PR #${prNumber} créée : ${SUB_BRANCH} → ${PARENT_BRANCH}`);
+    log(`PR #${prNumber} created: ${SUB_BRANCH} → ${PARENT_BRANCH}`);
 
-    // ── 6. Écrire le résultat ─────────────────────────────────────────────────
+    // ── 6. Write the result ───────────────────────────────────────────────────
     writeResult({
       status:    'done',
       prNumber,
@@ -278,17 +278,17 @@ Quand tout est commité, tape "COMMITS_DONE" et je créerai la PR.`
       iterations,
     });
 
-    log(`✅ Sub-agent terminé — PR #${prNumber}`);
+    log(`✅ Sub-agent completed — PR #${prNumber}`);
 
   } catch (err) {
-    log(`❌ Erreur sub-agent : ${err.message}`);
+    log(`❌ Sub-agent error: ${err.message}`);
     writeResult({ status: 'failed', error: err.message, prNumber: null });
     process.exit(1);
   }
 }
 
 main().catch(e => {
-  log(`Fatal : ${e.message}`);
+  log(`Fatal: ${e.message}`);
   writeResult({ status: 'failed', error: e.message, prNumber: null });
   process.exit(1);
 });

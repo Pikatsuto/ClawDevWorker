@@ -6,6 +6,8 @@ user-invocable: false
 always: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # git-provider — Git operations from chat
 
 ## Token used

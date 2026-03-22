@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * incremental-index.js — Index AST incrémental basé sur git diff
+ * incremental-index.js — Incremental AST index based on git diff
  *
- * Usage :
+ * Usage:
  *   node incremental-index.js [--full] [--search <query>] [--impact <file>] [--symbols <name>]
  *
- * Modes :
- *   (aucun arg)       → mise à jour incrémentale depuis git diff HEAD~1
- *   --full            → scan complet du workspace (premier run ou force)
- *   --search <query>  → recherche sémantique dans l'index
- *   --impact <file>   → calcule l'impact radius d'un fichier
- *   --symbols <name>  → trouve où un symbole est défini/utilisé
+ * Modes:
+ *   (no args)         → incremental update from git diff HEAD~1
+ *   --full            → full workspace scan (first run or forced)
+ *   --search <query>  → semantic search in the index
+ *   --impact <file>   → compute the impact radius of a file
+ *   --symbols <name>  → find where a symbol is defined/used
  *
- * Index stocké dans : $PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw/codebase-index.json
- * Partagé entre tous les agents du même projet via le volume project_data.
+ * Index stored in: $PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw/codebase-index.json
+ * Shared across all agents of the same project via the project_data volume.
  */
 'use strict';
 
@@ -31,7 +31,7 @@ const INDEX_FILE = path.join(INDEX_DIR, 'codebase-index.json');
 
 fs.mkdirSync(INDEX_DIR, { recursive: true });
 
-// ── Analyse AST légère ────────────────────────────────────────────────────────
+// ── Lightweight AST analysis ─────────────────────────────────────────────────
 
 const CODE_EXTENSIONS = new Set([
   '.ts','.tsx','.js','.jsx','.vue','.mjs','.cjs',
@@ -103,7 +103,7 @@ function parseFile(absPath) {
   };
 }
 
-// ── Lister les fichiers ────────────────────────────────────────────────────────
+// ── List files ──────────────────────────────────────────────────────────────
 
 function listFiles(dir, collected = []) {
   if (collected.length >= MAX_FILES) return collected;
@@ -123,7 +123,7 @@ function listFiles(dir, collected = []) {
   return collected;
 }
 
-// ── Chargement / sauvegarde de l'index ────────────────────────────────────────
+// ── Load / save index ────────────────────────────────────────────────────────
 
 function loadIndex() {
   try {
@@ -144,7 +144,7 @@ function saveIndex(index) {
 // ── Full scan ─────────────────────────────────────────────────────────────────
 
 function fullScan() {
-  console.log(`[codebase-index] Full scan de ${WORKSPACE}...`);
+  console.log(`[codebase-index] Full scan of ${WORKSPACE}...`);
   const files  = listFiles(WORKSPACE);
   const index  = loadIndex();
   index.files  = {};
@@ -162,30 +162,30 @@ function fullScan() {
   } catch {}
 
   saveIndex(index);
-  console.log(`[codebase-index] ${parsed} fichiers indexés → ${INDEX_FILE}`);
+  console.log(`[codebase-index] ${parsed} files indexed → ${INDEX_FILE}`);
   return index;
 }
 
-// ── Mise à jour incrémentale ──────────────────────────────────────────────────
+// ── Incremental update ───────────────────────────────────────────────────────
 
 function incrementalUpdate() {
   const index = loadIndex();
 
-  // Si pas d'index ou pas de dernier commit → full scan
+  // If no index or no last commit → full scan
   if (!index.lastCommit || Object.keys(index.files).length === 0) {
     return fullScan();
   }
 
   let changedFiles = [];
   try {
-    // Fichiers modifiés depuis le dernier commit indexé
+    // Files modified since the last indexed commit
     const diff = execSync(
       `git diff --name-only ${index.lastCommit} HEAD`,
       { cwd: WORKSPACE, encoding: 'utf8' }
     ).trim();
     changedFiles = diff ? diff.split('\n').filter(Boolean) : [];
 
-    // Fichiers non commités (staged + unstaged)
+    // Uncommitted files (staged + unstaged)
     const status = execSync('git status --short', { cwd: WORKSPACE, encoding: 'utf8' }).trim();
     const statusFiles = status
       ? status.split('\n').map(l => l.slice(3).trim()).filter(Boolean)
@@ -193,16 +193,16 @@ function incrementalUpdate() {
 
     changedFiles = [...new Set([...changedFiles, ...statusFiles])];
   } catch {
-    // Pas de git → full scan
+    // No git → full scan
     return fullScan();
   }
 
   if (changedFiles.length === 0) {
-    console.log('[codebase-index] Aucun changement depuis le dernier index.');
+    console.log('[codebase-index] No changes since the last index.');
     return index;
   }
 
-  console.log(`[codebase-index] Mise à jour incrémentale : ${changedFiles.length} fichiers`);
+  console.log(`[codebase-index] Incremental update: ${changedFiles.length} files`);
 
   let updated = 0;
   for (const relPath of changedFiles) {
@@ -213,14 +213,14 @@ function incrementalUpdate() {
     if (shouldExclude(relPath)) continue;
 
     if (!fs.existsSync(absPath)) {
-      // Fichier supprimé
+      // File deleted
       delete index.files[relPath];
-      console.log(`  ✗ supprimé : ${relPath}`);
+      console.log(`  ✗ deleted: ${relPath}`);
     } else {
       const info = parseFile(absPath);
       if (info) {
         index.files[relPath] = info;
-        console.log(`  ↻ mis à jour : ${relPath}`);
+        console.log(`  ↻ updated: ${relPath}`);
         updated++;
       }
     }
@@ -231,11 +231,11 @@ function incrementalUpdate() {
   } catch {}
 
   saveIndex(index);
-  console.log(`[codebase-index] ${updated} fichiers mis à jour. Total : ${Object.keys(index.files).length}`);
+  console.log(`[codebase-index] ${updated} files updated. Total: ${Object.keys(index.files).length}`);
   return index;
 }
 
-// ── Recherche sémantique ──────────────────────────────────────────────────────
+// ── Semantic search ──────────────────────────────────────────────────────────
 
 function search(query) {
   const index  = loadIndex();
@@ -255,13 +255,13 @@ function search(query) {
   results.sort((a, b) => b.score - a.score);
   const top = results.slice(0, 10);
 
-  console.log(`\n=== Recherche : "${query}" — ${top.length} résultats ===\n`);
+  console.log(`\n=== Search: "${query}" — ${top.length} results ===\n`);
   for (const { relPath, score, info } of top) {
     const matchSyms = info.symbols.filter(s => s.toLowerCase().includes(q));
     const matchExps = info.exports.filter(e => e.toLowerCase().includes(q));
-    console.log(`[${score}] ${relPath} (${info.lines} lignes)`);
-    if (matchSyms.length) console.log(`  Symboles : ${matchSyms.join(', ')}`);
-    if (matchExps.length) console.log(`  Exports  : ${matchExps.join(', ')}`);
+    console.log(`[${score}] ${relPath} (${info.lines} lines)`);
+    if (matchSyms.length) console.log(`  Symbols: ${matchSyms.join(', ')}`);
+    if (matchExps.length) console.log(`  Exports: ${matchExps.join(', ')}`);
     console.log('');
   }
   return top;
@@ -286,19 +286,19 @@ function impact(targetRelPath) {
     if (importsTarget) impacted.push(relPath);
   }
 
-  console.log(`\n=== Impact radius : ${target} ===`);
-  console.log(`${impacted.length} fichier(s) impacté(s) :`);
+  console.log(`\n=== Impact radius: ${target} ===`);
+  console.log(`${impacted.length} impacted file(s):`);
   impacted.forEach(f => console.log(`  - ${f}`));
 
   const targetInfo = index.files[target];
   if (targetInfo) {
-    console.log(`\nSymboles exportés : ${targetInfo.exports.join(', ') || '(aucun)'}`);
-    console.log(`Symboles définis  : ${targetInfo.symbols.join(', ') || '(aucun)'}`);
+    console.log(`\nExported symbols: ${targetInfo.exports.join(', ') || '(none)'}`);
+    console.log(`Defined symbols:  ${targetInfo.symbols.join(', ') || '(none)'}`);
   }
   return impacted;
 }
 
-// ── Recherche de symbole ──────────────────────────────────────────────────────
+// ── Symbol search ────────────────────────────────────────────────────────────
 
 function findSymbol(name) {
   const index   = loadIndex();
@@ -314,9 +314,9 @@ function findSymbol(name) {
     }
   }
 
-  console.log(`\n=== Symbole : ${name} ===`);
-  console.log(`Défini dans : ${defined.join(', ') || '(introuvable)'}`);
-  console.log(`Utilisé dans : ${used.length ? used.join(', ') : '(aucun import direct trouvé)'}`);
+  console.log(`\n=== Symbol: ${name} ===`);
+  console.log(`Defined in: ${defined.join(', ') || '(not found)'}`);
+  console.log(`Used in: ${used.length ? used.join(', ') : '(no direct import found)'}`);
   return { defined, used };
 }
 
@@ -332,13 +332,13 @@ if (args.includes('--full')) {
   search(q);
 } else if (args.includes('--impact')) {
   const f = args[args.indexOf('--impact') + 1];
-  if (!f) { console.error('Usage: --impact <fichier>'); process.exit(1); }
+  if (!f) { console.error('Usage: --impact <file>'); process.exit(1); }
   impact(f);
 } else if (args.includes('--symbols')) {
   const s = args[args.indexOf('--symbols') + 1];
-  if (!s) { console.error('Usage: --symbols <nom>'); process.exit(1); }
+  if (!s) { console.error('Usage: --symbols <name>'); process.exit(1); }
   findSymbol(s);
 } else {
-  // Défaut : mise à jour incrémentale
+  // Default: incremental update
   incrementalUpdate();
 }

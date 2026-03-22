@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * fanin-wait.js — Attend que tous les sub-agents aient écrit leurs résultats
+ * fanin-wait.js — Waits for all sub-agents to have written their results
  *
- * Usage :
+ * Usage:
  *   node fanin-wait.js --results-dir /tmp/dispatch-xxx/results --expected-count N --timeout 120
  *
- * Sort dès que tous les fichiers .md sont présents et non vides,
- * ou quand le timeout est atteint.
- * Exit code 0 : tous reçus. Exit code 1 : timeout (certains manquants).
+ * Exits as soon as all .md files are present and non-empty,
+ * or when the timeout is reached.
+ * Exit code 0: all received. Exit code 1: timeout (some missing).
  */
 
 'use strict';
@@ -21,7 +21,7 @@ const expected    = parseInt(args[args.indexOf('--expected-count') + 1] || '1');
 const timeoutSecs = parseInt(args[args.indexOf('--timeout') + 1] || '120');
 
 if (!resultsDir || !fs.existsSync(resultsDir)) {
-  console.error(`[fanin] Dossier résultats introuvable : ${resultsDir}`);
+  console.error(`[fanin] Results directory not found: ${resultsDir}`);
   process.exit(1);
 }
 
@@ -37,28 +37,28 @@ function countReady() {
     }).length;
 }
 
-console.log(`[fanin] Attente de ${expected} résultats dans ${resultsDir} (timeout=${timeoutSecs}s)`);
+console.log(`[fanin] Waiting for ${expected} results in ${resultsDir} (timeout=${timeoutSecs}s)`);
 
 const interval = setInterval(() => {
   const ready = countReady();
-  console.log(`[fanin] ${ready}/${expected} résultats reçus...`);
+  console.log(`[fanin] ${ready}/${expected} results received...`);
 
   if (ready >= expected) {
     clearInterval(interval);
-    console.log(`[fanin] ✅ Tous les résultats reçus`);
+    console.log(`[fanin] ✅ All results received`);
     process.exit(0);
   }
 
   if (Date.now() >= deadline) {
     clearInterval(interval);
     const missing = expected - ready;
-    console.error(`[fanin] ⏱ Timeout — ${missing} sous-tâche(s) n'ont pas répondu`);
-    // Crée des fichiers placeholder pour les tâches manquantes
-    // pour que l'agrégation sache qu'il y a eu un timeout
+    console.error(`[fanin] ⏱ Timeout — ${missing} subtask(s) did not respond`);
+    // Create placeholder files for missing tasks
+    // so that aggregation knows there was a timeout
     for (let i = ready + 1; i <= expected; i++) {
       const placeholder = path.join(resultsDir, `task-${i}-timeout.md`);
       if (!fs.existsSync(placeholder)) {
-        fs.writeFileSync(placeholder, `⏱ **Timeout** — Cette sous-tâche n'a pas répondu dans les ${timeoutSecs} secondes.\n`);
+        fs.writeFileSync(placeholder, `⏱ **Timeout** — This subtask did not respond within ${timeoutSecs} seconds.\n`);
       }
     }
     process.exit(1);

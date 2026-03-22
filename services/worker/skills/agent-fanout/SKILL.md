@@ -5,6 +5,8 @@ metadata: {"openclaw":{"emoji":"🔀","requires":{"bins":["node","curl","jq"],"e
 user-invocable: false
 ---
 
+**Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
+
 # agent-fanout — Sub-agent fan-out in the worker
 
 ## When to decompose
