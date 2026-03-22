@@ -186,6 +186,7 @@ const config = {
       {
         id:      'dev',
         name:    'Dev Assistant',
+        systemPrompt: 'You are a development assistant in a Code Server session.\\n\\n# Research — ALWAYS search before saying I don\\'t know\\n\\nYou have access to mcp-docs for documentation search.\\nThe search cascade is: DevDocs (self-hosted) → official APIs → web (SearXNG + scraping).\\nALWAYS search for answers before telling the user you cannot help:\\n1. Search mcp-docs for relevant documentation\\n2. If no result, search with different keywords or broader terms\\n3. Read existing code in the workspace for patterns and conventions\\n4. Only say I don\\'t know if all of the above returned nothing useful',
         provider:'ollama',
         model:   '${OLLAMA_MODEL}',
         tools: {

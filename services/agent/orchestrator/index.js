@@ -229,6 +229,10 @@ function spawnWorker(repo, issueId, role, branch, opts = {}) {
     `AGENT_GIT_LOGIN=${AGENT_LOGIN}`,
     `PROJECT_DATA_DIR=/projects`,
     `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
+    // Proxy — all worker internet traffic goes through squid whitelist
+    `HTTP_PROXY=http://cdw-squid:3128`,
+    `HTTPS_PROXY=http://cdw-squid:3128`,
+    `NO_PROXY=localhost,127.0.0.1,ollama,ollama-cpu,devdocs,searxng,browserless,mcp-docs,cdw-squid`,
   ];
 
   const envFlags = envVars.map(e => `-e "${e}"`).join(' ');
