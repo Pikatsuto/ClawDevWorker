@@ -30,7 +30,10 @@ ENV HOME=/home/coder \
     PATH=/home/coder/.cargo/bin:/usr/local/go/bin:/home/coder/.local/bin:$PATH
 
 # ── Utilisateur coder (non-root) ──────────────────────────────────────────────
-RUN groupadd --gid 1000 coder \
+# Ubuntu 24.04 crée un user "ubuntu" avec UID 1000 par défaut — on le supprime
+RUN userdel -r ubuntu 2>/dev/null || true \
+ && groupdel ubuntu 2>/dev/null || true \
+ && groupadd --gid 1000 coder \
  && useradd --uid 1000 --gid coder --shell /bin/bash --create-home coder
 
 # ── Dépendances système ───────────────────────────────────────────────────────

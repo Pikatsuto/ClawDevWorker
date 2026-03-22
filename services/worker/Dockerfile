@@ -15,7 +15,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # ── OpenClaw CLI ──────────────────────────────────────────────────────────────
-RUN npm install -g @openclaw/cli@latest
+RUN npm install -g openclaw 2>/dev/null || \
+    (git clone --depth=1 https://github.com/openclaw/openclaw.git /opt/openclaw \
+     && cd /opt/openclaw \
+     && npm ci --omit=dev \
+     && (npm run build 2>/dev/null || true) \
+     && npm link)
 
 # ── Git config ────────────────────────────────────────────────────────────────
 RUN git config --global user.email "agent@clawforge.local" \

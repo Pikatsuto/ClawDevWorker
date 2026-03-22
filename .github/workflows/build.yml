@@ -73,19 +73,44 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+      - name: Écrire statut
+        if: always()
+        run: |
+          mkdir -p /tmp/build-status
+          echo "${{ job.status }}" > /tmp/build-status/${{ matrix.service }}
+
+      - name: Upload statut
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-status-${{ matrix.service }}
+          path: /tmp/build-status/${{ matrix.service }}
+
   summary:
     needs: [discover, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - name: Télécharger statuts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-status-*
+          path: /tmp/build-status
+          merge-multiple: true
+
       - name: Résumé du build
         run: |
           echo "## Build clawdevworker v14" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Statut |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "Services buildés : ${{ needs.discover.outputs.services }}" \
-            | tr ',' '\n' | tr -d '[]"' | while read svc; do
+          echo '${{ needs.discover.outputs.services }}' \
+            | jq -r '.[]' | while read svc; do
               [ -z "$svc" ] && continue
-              echo "| cdw-$svc | ✅ |" >> $GITHUB_STEP_SUMMARY
+              status_file="/tmp/build-status/$svc"
+              if [ -f "$status_file" ] && [ "$(cat "$status_file")" = "success" ]; then
+                echo "| cdw-$svc | ✅ |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| cdw-$svc | ❌ |" >> $GITHUB_STEP_SUMMARY
+              fi
             done

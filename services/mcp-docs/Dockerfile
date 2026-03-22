@@ -2,11 +2,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json .
+COPY services/mcp-docs/package.json .
 # Pas de dépendances externes — stdlib Node.js uniquement
 RUN npm install --omit=dev 2>/dev/null || true
 
-COPY src/ src/
+COPY services/mcp-docs/src/ src/
 
 ENV NODE_ENV=production
 ENV DEVDOCS_URL=http://devdocs:9292

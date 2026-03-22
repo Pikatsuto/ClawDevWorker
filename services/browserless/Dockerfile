@@ -55,7 +55,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 RUN pip install --no-cache-dir nodriver fastapi uvicorn
 
 WORKDIR /app
-COPY server.py .
+COPY services/browserless/server.py .
 
 ENV DISPLAY=:99
 ENV PYTHONUNBUFFERED=1
