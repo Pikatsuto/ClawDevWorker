@@ -231,8 +231,21 @@ function spawnWorker(repo, issueId, role, branch, opts = {}) {
     `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
   ];
 
-  const envFlags = envVars.map(e => `-e ${e}`).join(' ');
-  const cmd = `docker run --rm -d --name worker-${role}-${issueId}-${Date.now()} ${envFlags} ${WORKER_IMAGE}`;
+  const envFlags = envVars.map(e => `-e "${e}"`).join(' ');
+
+  // Workers need access to: Ollama (backend), mcp-docs/devdocs/searxng/browserless (mcp-net),
+  // git provider (proxy-internal-net or direct), and project data volume
+  const networks = [
+    '--network backend',
+    '--network mcp-net',
+    '--network proxy-internal-net',
+  ].join(' ');
+
+  const volumes = [
+    '-v project_data:/projects',
+  ].join(' ');
+
+  const cmd = `docker run --rm -d --name worker-${role}-${issueId}-${Date.now()} ${networks} ${volumes} ${envFlags} ${WORKER_IMAGE}`;
 
   try {
     const containerId = execSync(cmd, { encoding: 'utf8', timeout: 30000 }).trim();

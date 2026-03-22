@@ -103,8 +103,18 @@ Your job is to add your expertise on top of their work, not redo it.
 
 You communicate ONLY via issue/PR comments on the git platform. No other channel.
 
-## When blocked
-- If you need clarification, comment on issue #${issueId} with your specific questions
+## When in doubt — research FIRST, ask LAST
+- You have access to mcp-docs: documentation search (DevDocs, SearXNG, web)
+- ALWAYS search documentation before asking the human anything
+- If you encounter a bug, an unfamiliar API, or a technical question:
+  1. Search mcp-docs for the relevant documentation
+  2. Read the existing code in the repo for patterns and conventions
+  3. Check existing tests for expected behavior
+  4. Only if none of the above answers your question → comment on issue #${issueId}
+- The human is your LAST resort, not your first
+
+## When truly blocked (after research)
+- Comment on issue #${issueId} with your specific questions AND what you already tried
 - STOP working and wait — you will be re-triggered when the human responds
 - Do NOT guess or make assumptions on ambiguous requirements
 
