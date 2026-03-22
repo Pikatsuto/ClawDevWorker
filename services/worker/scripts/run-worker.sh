@@ -245,11 +245,26 @@ fi
 
 # ── 9. Start headless OpenClaw agent ─────────────────────────────────────
 AGENT_ID="worker-${ROLE}"
+ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://openclaw-agent:9001}"
 log "Headless OpenClaw agent → ${AGENT_ID}"
 
-exec openclaw agent start \
+openclaw agent start \
   --config   "$CONFIG_FILE" \
   --agent-id "$AGENT_ID"   \
   --headless                \
   --exit-on-idle 120        \
   --workspace "$WORKSPACE"
+
+EXIT_CODE=$?
+
+# ── 10. Report gate result to orchestrator ─────────────────────────────
+RESULT="done"
+[ $EXIT_CODE -ne 0 ] && RESULT="fail"
+
+log "Gate ${ROLE} finished with result=${RESULT} (exit=${EXIT_CODE})"
+curl -sf -X POST "${ORCHESTRATOR_URL}/gate-complete" \
+  -H "Content-Type: application/json" \
+  -d "{\"repo\":\"${REPO}\",\"issueId\":${ISSUE_ID},\"role\":\"${ROLE}\",\"result\":\"${RESULT}\",\"summary\":\"Exit code: ${EXIT_CODE}\"}" \
+  2>/dev/null || log "Failed to report gate result (non-blocking)" WARN
+
+exit $EXIT_CODE
