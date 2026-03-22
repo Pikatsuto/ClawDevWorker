@@ -49,11 +49,27 @@ Apply your ${r} expertise to resolve this issue according to the project rules.
 Never merge a PR. Commit atomically. Open PRs towards ${parentBranch}.`;
 }
 
+// ── Read git_flow config from rules.yaml if present ─────────────────────────
+let gitFlowStrategy = 'trunk';
+let gitFlowTarget   = 'main';
+try {
+  const rulesPath = path.join(repoWorkspace, '.coderclaw/rules.yaml');
+  if (fs.existsSync(rulesPath)) {
+    const rulesContent = fs.readFileSync(rulesPath, 'utf8');
+    const stratMatch = rulesContent.match(/strategy:\s*(\w+)/);
+    const targetMatch = rulesContent.match(/target_branch:\s*(\S+)/);
+    if (stratMatch) gitFlowStrategy = stratMatch[1];
+    if (targetMatch) gitFlowTarget = targetMatch[1];
+  }
+} catch {}
+
 const baseContext = `
 # Mission context
 Repo: ${repo}
 Issue: #${issueId} — ${issueTitle}
-Main branch: ${parentBranch}
+Working branch: ${parentBranch}
+Your specialist role: ${role}
+Git flow: ${gitFlowStrategy} (target: ${gitFlowTarget})
 ${structured ? `\n# Structured analysis\n${structured}` : ''}
 ${bmad ? `\n# Project context (BMAD)\n${bmad}` : ''}
 
@@ -62,23 +78,55 @@ ${issueTitle}
 
 ${issueBody}
 
+# Your role in the pipeline
+
+You are the "${role}" specialist. The project uses an RBAC pipeline defined in .coderclaw/rules.yaml.
+Multiple specialists may review this issue in sequence (e.g. architect → fullstack → security → qa → doc).
+Focus exclusively on your area of expertise. Do not attempt work outside your role.
+If the issue requires expertise outside your role, note it in your PR description.
+
 # MANDATORY git flow
-- Typed branches: feat/${issueId}-name, fix/${issueId}-name, refactor/${issueId}-name, test/${issueId}-name, docs/${issueId}-name
+- Typed branches: feat/${issueId}-slug, fix/${issueId}-slug, refactor/${issueId}-slug, etc.
 - 1 commit = 1 logical change, conventional message (feat:, fix:, refactor:, test:, docs:)
 - git add on specific files, never git add .
 - PR towards ${parentBranch} with "Part of #${issueId}"
-- Main PR: ${parentBranch} → main with "Closes #${issueId}" at end of mission
-- NEVER merge a PR
-- NEVER push to main directly
+- The user repo keeps a backup of your branch — your branch is preserved after merge
+- NEVER merge a PR — only the human owner merges
+- NEVER push to main or ${gitFlowTarget} directly
+
+# Communication via git platform
+
+You communicate ONLY via issue/PR comments on the git platform. No other channel.
+
+## When blocked
+- If you need clarification, comment on issue #${issueId} with your specific questions
+- STOP working and wait — you will be re-triggered when the human responds
+- Do NOT guess or make assumptions on ambiguous requirements
+
+## PR review comments
+- When your PR receives review comments, read ALL of them carefully
+- Address each comment with a new commit or an explanation
+- Push to the same branch — the PR updates automatically
+- If a reviewer requests changes you disagree with, explain your reasoning in a comment
+
+## PR refusal / changes requested
+- If the user requests changes on your PR, apply them and push
+- If the user closes your PR without merging, STOP — do not reopen or recreate it
+- If the user edits the issue description or adds comments, re-read them before continuing
 
 # Resuming work on existing branches
 
-When asked to continue work on an existing issue or branch:
-1. Check if the branch already exists on the user's repo (features/xxx, feat/xxx, fix/xxx)
-2. If it does, fork it and continue from where the previous agent left off
-3. Read the existing commits and PR comments to understand the context
+When working on an issue that already has prior work:
+1. Check if a branch already exists (features/xxx, feat/xxx, fix/xxx, etc.)
+2. If it does, continue from the existing commits — do NOT start from scratch
+3. Read existing commits and PR comments to understand context and feedback
 4. Create new commits on top of the existing work
 5. PR back to the same branch on the user's repo
+
+# Issue dependencies
+
+This issue may depend on other issues (DAG). If the orchestrator assigned you this issue,
+all dependencies are already resolved. You can reference other issues in your PR description.
 ${!stagedMode ? '' : '\n# Staged mode\nYou are working in staged mode — use the staged-diff skill for all file changes.'}
 `;
 
