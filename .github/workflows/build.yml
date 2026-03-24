@@ -29,20 +29,19 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Restore previous hashes
-        id: cache
         uses: actions/cache/restore@v4
         with:
-          path: /tmp/prev-hashes
+          path: /tmp/build-hashes
           key: build-hashes-${{ github.ref_name }}
           restore-keys: build-hashes-
 
       - id: changes
         run: |
           FORCE="${{ inputs.force_all || 'false' }}"
+          mkdir -p /tmp/build-hashes
 
           ALL="[]"
           MATRIX="[]"
-          mkdir -p /tmp/new-hashes
 
           for dockerfile in services/*/Dockerfile; do
             svc=$(echo "$dockerfile" | cut -d/ -f2)
@@ -59,9 +58,9 @@ jobs:
 
             # Hash all source files (Dockerfile + COPY sources)
             HASH=$(find $COPY_DIRS "$dockerfile" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)
-            echo "$HASH" > "/tmp/new-hashes/${svc}"
 
             if [ "$FORCE" = "true" ]; then
+              echo "$HASH" > "/tmp/build-hashes/${svc}"
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
               echo "  ✓ $svc — forced rebuild"
               continue
@@ -69,9 +68,10 @@ jobs:
 
             # Compare with previous hash
             PREV=""
-            [ -f "/tmp/prev-hashes/${svc}" ] && PREV=$(cat "/tmp/prev-hashes/${svc}")
+            [ -f "/tmp/build-hashes/${svc}" ] && PREV=$(cat "/tmp/build-hashes/${svc}")
 
             if [ "$HASH" != "$PREV" ]; then
+              echo "$HASH" > "/tmp/build-hashes/${svc}"
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
               echo "  ✓ $svc — hash changed"
             else
@@ -83,11 +83,11 @@ jobs:
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Build: $MATRIX"
 
-      - name: Save new hashes
+      - name: Save hashes
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: /tmp/new-hashes
+          path: /tmp/build-hashes
           key: build-hashes-${{ github.ref_name }}-${{ github.sha }}
 
   build:
