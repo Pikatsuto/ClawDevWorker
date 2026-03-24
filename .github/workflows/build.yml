@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services/**'
+      - 'shared/**'
       - 'scripts/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
