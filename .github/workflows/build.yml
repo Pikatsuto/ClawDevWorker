@@ -28,17 +28,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Restore previous hashes
-        uses: actions/cache/restore@v4
-        with:
-          path: /tmp/build-hashes
-          key: build-hashes-${{ github.ref_name }}
-          restore-keys: build-hashes-
+      - name: Fetch success markers
+        id: markers
+        run: |
+          MARKERS=$(gh api repos/${{ github.repository }}/actions/caches \
+            --paginate --jq '.actions_caches[].key' | grep '^build-ok-' || true)
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$MARKERS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - id: changes
         run: |
           FORCE="${{ inputs.force_all || 'false' }}"
-          mkdir -p /tmp/build-hashes
+          MARKERS='${{ steps.markers.outputs.list }}'
 
           ALL="[]"
           MATRIX="[]"
@@ -47,48 +51,42 @@ jobs:
             svc=$(echo "$dockerfile" | cut -d/ -f2)
             ALL=$(echo "$ALL" | jq -c --arg s "$svc" '. + [$s]')
 
-            # Collect all COPY sources from the Dockerfile (excluding --from= stages)
+            # Collect COPY sources (exclude --from= stages, destination /)
             COPY_DIRS=$(grep -E '^\s*COPY\s' "$dockerfile" \
               | grep -v '\-\-from=' \
               | sed -E 's/^\s*COPY\s+(--[^ ]+ +)*//' \
               | tr ' \\' '\n' \
               | grep -v '^/$' \
               | grep -v '^$' \
+              | grep -v '^\.' \
               | sort -u)
 
-            # Hash all source files (Dockerfile + COPY sources)
-            HASH=$(find $COPY_DIRS "$dockerfile" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)
+            # Hash per service: Dockerfile + its COPY sources only
+            HASH=$(find $COPY_DIRS "$dockerfile" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -c1-16)
+            echo "  $svc hash: $HASH"
+
+            # Export hash for build job
+            echo "hash_${svc//-/_}=$HASH" >> $GITHUB_OUTPUT
 
             if [ "$FORCE" = "true" ]; then
-              echo "$HASH" > "/tmp/build-hashes/${svc}"
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
               echo "  ✓ $svc — forced rebuild"
               continue
             fi
 
-            # Compare with previous hash
-            PREV=""
-            [ -f "/tmp/build-hashes/${svc}" ] && PREV=$(cat "/tmp/build-hashes/${svc}")
-
-            if [ "$HASH" != "$PREV" ]; then
-              echo "$HASH" > "/tmp/build-hashes/${svc}"
-              MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
-              echo "  ✓ $svc — hash changed"
+            # Check if success marker exists for this hash
+            MARKER_KEY="build-ok-${svc}-${HASH}"
+            if echo "$MARKERS" | grep -qF "$MARKER_KEY"; then
+              echo "  ⊘ $svc — unchanged (marker found)"
             else
-              echo "  ⊘ $svc — unchanged"
+              MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
+              echo "  ✓ $svc — needs build (no marker)"
             fi
           done
 
           echo "all=$ALL" >> $GITHUB_OUTPUT
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Build: $MATRIX"
-
-      - name: Save hashes
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: /tmp/build-hashes
-          key: build-hashes-${{ github.ref_name }}-${{ github.sha }}
 
   build:
     needs: discover
@@ -97,6 +95,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +112,21 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+
+      - name: Compute source hash
+        id: hash
+        run: |
+          dockerfile="services/${{ matrix.service }}/Dockerfile"
+          COPY_DIRS=$(grep -E '^\s*COPY\s' "$dockerfile" \
+            | grep -v '\-\-from=' \
+            | sed -E 's/^\s*COPY\s+(--[^ ]+ +)*//' \
+            | tr ' \\' '\n' \
+            | grep -v '^/$' \
+            | grep -v '^$' \
+            | grep -v '^\.' \
+            | sort -u)
+          HASH=$(find $COPY_DIRS "$dockerfile" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -c1-16)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
 
       - name: Metadata
         id: meta
@@ -140,6 +154,17 @@ jobs:
           cache-to: |
             type=gha,mode=max,scope=${{ matrix.service }}-v2
             type=inline
+
+      - name: Save success marker
+        if: success()
+        run: mkdir -p /tmp/marker && echo ok > /tmp/marker/ok
+
+      - name: Upload success marker
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/marker
+          key: build-ok-${{ matrix.service }}-${{ steps.hash.outputs.hash }}
 
       - name: Write status
         if: always()
