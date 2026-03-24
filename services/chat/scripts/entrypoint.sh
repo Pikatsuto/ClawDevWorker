@@ -167,15 +167,16 @@ const cpus         = process.env.EPHEMERAL_CPUS          || '0.5';
 const timeout      = process.env.EPHEMERAL_TIMEOUT       || '60';
 const githubToken  = process.env.GITHUB_TOKEN            || '';
 const token        = process.env.GATEWAY_TOKEN;
+const role         = process.env.ROLE            || '';
 
-const systemPrompt = `You are an interactive development assistant.
+// ── Load specialist prompt if ROLE is set ────────────────────────────────────
+function loadSpecialistPrompt(r) {
+  const filePath = path.join('/opt/specialists', r + '.md');
+  if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf8');
+  return '';
+}
 
-You can:
-- Answer technical questions and search documentation via mcp-docs
-- Write and execute code in isolated ephemeral containers (docker-exec)
-- Manipulate files in your container
-
-# Research — ALWAYS search before asking
+const baseContext = `# Research — ALWAYS search before asking
 
 You have access to mcp-docs for documentation search.
 The search cascade is: DevDocs (self-hosted) → official APIs → web (SearXNG + scraping).
@@ -210,6 +211,11 @@ Absolute limits:
 - If you are truly stuck after research, ask for help — that is normal and expected.
 - NEVER loop endlessly on a failing approach. If something fails 3 times, try a different strategy.
   If all strategies fail, escalate to the human with what you tried and why it failed.`;
+
+const specialistPrompt = role ? loadSpecialistPrompt(role) : '';
+const systemPrompt = specialistPrompt
+  ? specialistPrompt + '\n\n' + baseContext
+  : 'You are an interactive development assistant.\n\nYou can:\n- Answer technical questions and search documentation via mcp-docs\n- Write and execute code in isolated ephemeral containers (docker-exec)\n- Manipulate files in your container\n\n' + baseContext;
 
 const config = {
   gateway: {

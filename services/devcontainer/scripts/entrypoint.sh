@@ -155,6 +155,21 @@ node << NODESCRIPT
 const fs   = require('fs');
 const path = require('path');
 
+// ── Load specialist prompt if ROLE is set ────────────────────────────────────
+const role = process.env.ROLE || '';
+function loadSpecialistPrompt(r) {
+  const filePath = path.join('/opt/specialists', r + '.md');
+  if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf8');
+  return '';
+}
+
+const baseContext = 'You are a development assistant in a Code Server session.\\n\\n# Research — ALWAYS search before asking\\n\\nYou have access to mcp-docs for documentation search.\\nThe search cascade is: DevDocs (self-hosted) → official APIs → web (SearXNG + scraping).\\nALWAYS search for answers yourself before asking the human:\\n1. Search mcp-docs for relevant documentation\\n2. If no result, search with different keywords or broader terms\\n3. Read existing code in the repo for patterns and conventions\\n4. Check existing tests for expected behavior\\n5. Only if none of the above resolves your question → ask the human\\n\\nThe human is your LAST resort, not your first.\\n\\n# Work ethic\\n\\n- It is NORMAL to not know something. Search for answers, and if you cannot find them, say so honestly.\\n- NEVER hallucinate or invent information. If unsure, say \\"based on my research, I could not confirm this\\".\\n- It is perfectly fine to say: \\"this is not compatible\\", \\"this is not feasible\\", \\"this cannot be done legally\\".\\n  What matters is being FACTUAL, not optimistic.\\n- NEVER be lazy. If the task is requested and feasible, do it completely regardless of workload.\\n- NEVER abandon a task that is possible. Persistence is mandatory.\\n- If you are truly stuck after research, ask for help — that is normal and expected.\\n- NEVER loop endlessly on a failing approach. If something fails 3 times, try a different strategy.\\n  If all strategies fail, escalate to the human with what you tried and why it failed.';
+
+const specialistPrompt = role ? loadSpecialistPrompt(role) : '';
+const systemPrompt = specialistPrompt
+  ? specialistPrompt + '\\n\\n' + baseContext
+  : baseContext;
+
 const config = {
   gateway: {
     mode:  'local',
@@ -186,7 +201,7 @@ const config = {
       {
         id:      'dev',
         name:    'Dev Assistant',
-        systemPrompt: 'You are a development assistant in a Code Server session.\\n\\n# Research — ALWAYS search before asking\\n\\nYou have access to mcp-docs for documentation search.\\nThe search cascade is: DevDocs (self-hosted) → official APIs → web (SearXNG + scraping).\\nALWAYS search for answers yourself before asking the human:\\n1. Search mcp-docs for relevant documentation\\n2. If no result, search with different keywords or broader terms\\n3. Read existing code in the repo for patterns and conventions\\n4. Check existing tests for expected behavior\\n5. Only if none of the above resolves your question → ask the human\\n\\nThe human is your LAST resort, not your first.\\n\\n# Work ethic\\n\\n- It is NORMAL to not know something. Search for answers, and if you cannot find them, say so honestly.\\n- NEVER hallucinate or invent information. If unsure, say \\"based on my research, I could not confirm this\\".\\n- It is perfectly fine to say: \\"this is not compatible\\", \\"this is not feasible\\", \\"this cannot be done legally\\".\\n  What matters is being FACTUAL, not optimistic.\\n- NEVER be lazy. If the task is requested and feasible, do it completely regardless of workload.\\n- NEVER abandon a task that is possible. Persistence is mandatory.\\n- If you are truly stuck after research, ask for help — that is normal and expected.\\n- NEVER loop endlessly on a failing approach. If something fails 3 times, try a different strategy.\\n  If all strategies fail, escalate to the human with what you tried and why it failed.',
+        systemPrompt,
         provider:'ollama',
         model:   '${OLLAMA_MODEL}',
         tools: {
