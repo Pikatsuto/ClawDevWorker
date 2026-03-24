@@ -27,71 +27,68 @@ jobs:
       all_services: ${{ steps.changes.outputs.all }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Restore previous hashes
+        id: cache
+        uses: actions/cache/restore@v4
         with:
-          fetch-depth: 2
+          path: /tmp/prev-hashes
+          key: build-hashes-${{ github.ref_name }}
+          restore-keys: build-hashes-
 
       - id: changes
         run: |
           FORCE="${{ inputs.force_all || 'false' }}"
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-
-          # Force all only on explicit manual trigger or if git diff fails
-          REBUILD_ALL=false
-          if [ "$FORCE" = "true" ] || [ -z "$CHANGED" ]; then
-            REBUILD_ALL=true
-          fi
 
           ALL="[]"
           MATRIX="[]"
+          mkdir -p /tmp/new-hashes
 
-          # Iterate over every service that has a Dockerfile
           for dockerfile in services/*/Dockerfile; do
             svc=$(echo "$dockerfile" | cut -d/ -f2)
             ALL=$(echo "$ALL" | jq -c --arg s "$svc" '. + [$s]')
 
-            if [ "$REBUILD_ALL" = "true" ]; then
+            # Collect all COPY sources from the Dockerfile (excluding --from= stages)
+            COPY_DIRS=$(grep -E '^\s*COPY\s' "$dockerfile" \
+              | grep -v '\-\-from=' \
+              | sed -E 's/^\s*COPY\s+(--[^ ]+ +)*//' \
+              | tr ' \\' '\n' \
+              | grep -v '^/$' \
+              | grep -v '^$' \
+              | sort -u)
+
+            # Hash all source files (Dockerfile + COPY sources)
+            HASH=$(find $COPY_DIRS "$dockerfile" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)
+            echo "$HASH" > "/tmp/new-hashes/${svc}"
+
+            if [ "$FORCE" = "true" ]; then
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
               echo "  ✓ $svc — forced rebuild"
               continue
             fi
 
-            # Check if the Dockerfile itself or any of its COPY sources changed
-            SVC_DIR="services/${svc}"
-            NEEDS_BUILD=false
+            # Compare with previous hash
+            PREV=""
+            [ -f "/tmp/prev-hashes/${svc}" ] && PREV=$(cat "/tmp/prev-hashes/${svc}")
 
-            # Dockerfile or anything in the service dir changed
-            if echo "$CHANGED" | grep -q "^${SVC_DIR}/"; then
-              NEEDS_BUILD=true
-            fi
-
-            # Also check cross-service COPY sources from the Dockerfile
-            if [ "$NEEDS_BUILD" = "false" ]; then
-              COPY_SOURCES=$(grep -E '^\s*COPY\s' "$dockerfile" \
-                | grep -v '\-\-from=' \
-                | sed -E 's/^\s*COPY\s+//' \
-                | awk '{print $1}' \
-                | grep -v "^${SVC_DIR}" \
-                | sort -u)
-
-              for src in $COPY_SOURCES; do
-                if echo "$CHANGED" | grep -q "^${src}"; then
-                  NEEDS_BUILD=true
-                  break
-                fi
-              done
-            fi
-
-            if [ "$NEEDS_BUILD" = "true" ]; then
+            if [ "$HASH" != "$PREV" ]; then
               MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
-              echo "  ✓ $svc — changed"
+              echo "  ✓ $svc — hash changed"
             else
-              echo "  ⊘ $svc — skipped"
+              echo "  ⊘ $svc — unchanged"
             fi
           done
 
           echo "all=$ALL" >> $GITHUB_OUTPUT
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Build: $MATRIX"
+
+      - name: Save new hashes
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/new-hashes
+          key: build-hashes-${{ github.ref_name }}-${{ github.sha }}
 
   build:
     needs: discover
