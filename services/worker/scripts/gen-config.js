@@ -190,19 +190,18 @@ function getAllowedTools(r) {
 
 function getEnabledSkills(r) {
   const sharedSkills = [
-    'session-handoff', 'semantic-memory', 'project-context', 'frontend-design',
+    'session-handoff', 'semantic-memory', 'project-context', 'loop-detect',
   ];
   const devSkills = [
-    ...sharedSkills, 'docker-exec', 'git-flow', 'agent-fanout', 'codebase-analyze',
-    ...(stagedMode ? ['staged-diff'] : []),
+    ...sharedSkills, 'git-flow', 'agent-fanout', 'codebase-analyze',
   ];
   const reviewSkills = [...sharedSkills];
 
   const skillMap = {
     architect:  reviewSkills,
-    frontend:   [...devSkills],
+    frontend:   [...devSkills, 'frontend-design'],
     backend:    devSkills,
-    fullstack:  devSkills,
+    fullstack:  [...devSkills, 'frontend-design'],
     devops:     devSkills,
     security:   [...reviewSkills, 'codebase-analyze'],
     qa:         [...reviewSkills, 'codebase-analyze'],

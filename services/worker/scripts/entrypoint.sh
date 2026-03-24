@@ -68,19 +68,7 @@ ISSUE_TITLE=$(echo "$ISSUE" | jq -r '.title')
 ISSUE_BODY=$(echo  "$ISSUE" | jq -r '.body // ""')
 log "Issue: ${ISSUE_TITLE}"
 
-# ── 3. Read git flow config from rules.yaml ──────────────────────────────
-GIT_FLOW_STRATEGY="trunk"
-GIT_FLOW_TARGET="main"
-if [ -f "$WORKSPACE/.coderclaw/rules.yaml" ]; then
-  _STRAT=$(grep -A5 'git_flow:' "$WORKSPACE/.coderclaw/rules.yaml" 2>/dev/null | grep 'strategy:' | awk '{print $2}' | tr -d '"'"'" || true)
-  _TARGET=$(grep -A5 'git_flow:' "$WORKSPACE/.coderclaw/rules.yaml" 2>/dev/null | grep 'target_branch:' | awk '{print $2}' | tr -d '"'"'" || true)
-  [ -n "$_STRAT" ] && GIT_FLOW_STRATEGY="$_STRAT"
-  [ -n "$_TARGET" ] && GIT_FLOW_TARGET="$_TARGET"
-fi
-export GIT_FLOW_STRATEGY GIT_FLOW_TARGET
-log "Git flow: ${GIT_FLOW_STRATEGY} (target: ${GIT_FLOW_TARGET})"
-
-# ── 4. Main branch for the issue ─────────────────────────────────────────
+# ── 3. Main branch for the issue ─────────────────────────────────────────
 # Check if a feature branch already exists on the user's repo (resume flow).
 BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | \
   sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40 | sed 's/-$//')
@@ -149,7 +137,7 @@ log "Score: ${HEURISTIC_SCORE}/100"
 STRUCTURED_CONTEXT=""
 CPU_DECOMPOSABLE="false"
 
-if [ "$ROLE" = "dev" ] && \
+if echo "fullstack backend frontend devops" | grep -qw "$ROLE" && \
    [ "$HEURISTIC_SCORE" -ge 45 ] && [ "$HEURISTIC_SCORE" -le 75 ] && \
    [ "$NO_DEGRADE" = "false" ]; then
 
@@ -217,7 +205,7 @@ node /opt/worker/gen-config.js || fail "openclaw.json generation failed"
 # ── 7. Install skills ────────────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR/skills"
 
-for skill in docker-exec git-flow agent-fanout loop-detect spec-init staged-diff codebase-analyze \
+for skill in git-flow agent-fanout loop-detect codebase-analyze \
              session-handoff semantic-memory project-context frontend-design; do
   [ -d "/opt/skills/${skill}" ] && \
     cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}" && \
