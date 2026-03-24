@@ -54,6 +54,7 @@ COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts/
 COPY shared/opt services/devcontainer/opt \
      /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
+    && npm install -g better-sqlite3 \
     && chmod -R a+rX /opt/
 
 # ── Stage 4: Code Server install ───────────────────────────────────────────

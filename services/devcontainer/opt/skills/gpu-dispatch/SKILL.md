@@ -58,7 +58,7 @@ For each subtask, launch an OpenClaw sub-agent with:
 mkdir -p "/tmp/${DISPATCH_ID}/task-N"
 
 # Launch the sub-agent
-bash pty:false background:true timeout:120 command:"node /opt/stream-proxy/run-subagent.js \
+bash pty:false background:true timeout:120 command:"node /opt/skills/agent-fanout/scripts/run-subagent.js \
   --task-id task-N \
   --dispatch-id ${DISPATCH_ID} \
   --workspace-read-only ${WORKSPACE_DIR} \
@@ -81,7 +81,7 @@ Wait for all sub-agents to write their result file:
 
 ```bash
 # Fan-in script — waits for all result files with timeout
-node /opt/stream-proxy/fanin-wait.js \
+node /opt/skills/gpu-dispatch/scripts/fanin-wait.js \
   --results-dir "/tmp/${DISPATCH_ID}/results" \
   --expected-count N \
   --timeout 120
