@@ -1,9 +1,8 @@
-FROM ubuntu/squid:latest
+FROM alpine:3.21
+
+RUN apk add --no-cache squid
 
 COPY services/squid/squid.conf /etc/default/squid/squid.conf
+COPY --chmod=755 services/squid/entrypoint.sh /usr/local/bin/entrypoint
 
-COPY services/squid/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["squid", "-NYCd", "1"]
+ENTRYPOINT ["entrypoint"]

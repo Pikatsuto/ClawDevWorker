@@ -28,4 +28,4 @@ if [ ! -d "/var/spool/squid/00" ]; then
     squid -z --foreground 2>/dev/null || true
 fi
 
-exec "$@"
+squid -NYCd 1

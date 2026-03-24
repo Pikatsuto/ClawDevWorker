@@ -1,12 +1,13 @@
 ###############################################################################
-# kasm-devcontainer — Base image for ephemeral dev sessions
+# devcontainer — Base image for ephemeral dev sessions
 #
-# Replaces kasm-openclaw (Kasm VNC/XFCE).
+# Base: alpine:3.21
+#
 # Contains:
 #   - Code Server (VSCode in the browser)
 #   - OpenClaw gateway (from coollabsio/openclaw, configure.js included)
 #   - Dev stacks: Node 22 + Python 3 + Rust + Go + Git
-#   - Our skills + VSCode config identical to the old kasm-openclaw
+#   - Skills + VSCode config
 #
 # Usage: ephemeral container dynamically spawned by the orchestrator
 #   - Per-user volume: ~/.config/Code/User + extensions + ~/.openclaw
@@ -15,121 +16,96 @@
 #   - Destroyed on /dev release (--rm)
 ###############################################################################
 
-# ── Stage 1: OpenClaw from coollabsio (configure.js + nginx included) ────────
+# ── Stage 1: OpenClaw from coollabsio ──────────────────────────────────────
 FROM coollabsio/openclaw:latest AS openclaw-base
 
-# ── Stage 2: Final image ─────────────────────────────────────────────────────
-FROM ubuntu:24.04
-
-ARG DEBIAN_FRONTEND=noninteractive
+# ── Stage 2: base ──────────────────────────────────────────────────────────
+FROM alpine:3.21 AS base
 
 ENV HOME=/home/coder \
     USER=coder \
     SHELL=/bin/bash \
     PATH=/home/coder/.cargo/bin:/usr/local/go/bin:/home/coder/.local/bin:$PATH
 
-# ── Coder user (non-root) ────────────────────────────────────────────────────
-# Ubuntu 24.04 creates a default "ubuntu" user with UID 1000 — remove it
-RUN userdel -r ubuntu 2>/dev/null || true \
- && groupdel ubuntu 2>/dev/null || true \
- && groupadd --gid 1000 coder \
- && useradd --uid 1000 --gid coder --shell /bin/bash --create-home coder
+RUN addgroup -g 1000 coder \
+ && adduser -u 1000 -G coder -s /bin/bash -D coder
 
-# ── System dependencies ──────────────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl wget git ca-certificates gnupg \
-        build-essential pkg-config libssl-dev \
-        python3 python3-pip python3-venv python3-dev \
+RUN apk add --no-cache \
+        curl wget git ca-certificates gnupg bash \
+        build-base pkgconf openssl-dev \
+        python3 py3-pip py3-virtualenv python3-dev \
         jq htop tree ripgrep fzf \
         openssh-client \
         unzip zip \
         nginx \
-    && rm -rf /var/lib/apt/lists/*
+        nodejs npm \
+        go rust cargo
 
-# ── Node.js ───────────────────────────────────────────────────────────
-RUN NODE_MAJOR=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)] | .[0].version | split(".")[0] | ltrimstr("v")') \
- && curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
- && apt-get install -y --no-install-recommends nodejs \
- && rm -rf /var/lib/apt/lists/* \
- && npm install -g yarn pnpm typescript ts-node
+RUN npm install -g yarn pnpm typescript ts-node
 
-# ── Go (latest stable) ────────────────────────────────────────────────────────
-RUN GO_VERSION=$(curl -fsSL "https://go.dev/VERSION?m=text" | head -1 | sed 's/^go//') \
- && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-      -o /tmp/go.tar.gz \
- && tar -C /usr/local -xzf /tmp/go.tar.gz \
- && rm /tmp/go.tar.gz
+# ── Stage 3: build ─────────────────────────────────────────────────────────
+FROM base AS build
 
-# ── Rust ──────────────────────────────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends rustc cargo \
- && rm -rf /var/lib/apt/lists/* \
- && mkdir -p /home/coder/.cargo \
- && chown -R coder:coder /home/coder/.cargo
-
-# ── Code Server ───────────────────────────────────────────────────────────────
-RUN CS_VERSION=$(curl -fsSL "https://api.github.com/repos/coder/code-server/releases/latest" | jq -r .tag_name | sed 's/^v//') \
- && curl -fsSL "https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server_${CS_VERSION}_amd64.deb" \
-      -o /tmp/code-server.deb \
- && dpkg -i /tmp/code-server.deb \
- && rm /tmp/code-server.deb
-
-# ── OpenClaw — copied from coollabsio ────────────────────────────────────────
-# openclaw is installed at /opt/openclaw in the upstream image
-# binary at /usr/local/bin/openclaw → exec node /opt/openclaw/app/openclaw.mjs
+# OpenClaw from coollabsio
 COPY --from=openclaw-base /opt/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
-COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts
+COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts/
 
-# ── mcp-docs ──────────────────────────────────────────────────────────────────
-COPY services/mcp-docs/ /opt/mcp-docs/
+# mcp-docs
+COPY services/mcp-docs services/git-provider \
+     services/agent/specialists \
+     /opt/
 RUN cd /opt/mcp-docs && npm install --omit=dev
 
-# ── git-provider (for /project status in Code Server) ─────────────────────────
-COPY services/git-provider/ /opt/git-provider/
+# Skills (merged COPYs)
+COPY services/worker/skills/staged-diff services/worker/skills/codebase-analyze \
+    services/worker/skills/session-handoff services/worker/skills/semantic-memory \
+    services/worker/skills/project-context services/worker/skills/frontend-design \
+    services/worker/skills/loop-detect services/worker/skills/spec-init \
+    services/devcontainer/skills/gpu-dispatch services/devcontainer/skills/cpu-status \
+    services/devcontainer/skills/bmad services/devcontainer/skills/user-token \
+    services/devcontainer/skills/git-provider-chat \
+    /opt/skills/
 
-# ── Skills ────────────────────────────────────────────────────────────────────
-COPY services/worker/skills/staged-diff/      /opt/skills/staged-diff/
-COPY services/worker/skills/codebase-analyze/ /opt/skills/codebase-analyze/
-COPY services/worker/skills/session-handoff/  /opt/skills/session-handoff/
-COPY services/worker/skills/semantic-memory/  /opt/skills/semantic-memory/
-COPY services/worker/skills/project-context/  /opt/skills/project-context/
-COPY services/worker/skills/frontend-design/  /opt/skills/frontend-design/
-COPY services/worker/skills/loop-detect/      /opt/skills/loop-detect/
-COPY services/worker/skills/spec-init/        /opt/skills/spec-init/
-COPY services/agent/specialists/              /opt/specialists/
-COPY services/devcontainer/skills/gpu-dispatch/       /opt/skills/gpu-dispatch/
-COPY services/devcontainer/skills/cpu-status/         /opt/skills/cpu-status/
-COPY services/devcontainer/skills/bmad/               /opt/skills/bmad/
-COPY services/devcontainer/skills/user-token/         /opt/skills/user-token/
-COPY services/devcontainer/skills/git-provider-chat/  /opt/skills/git-provider-chat/
 RUN mkdir -p /opt/scripts/spec
-COPY services/chat/scripts/spec/spec-init.js          /opt/scripts/spec/spec-init.js
-RUN chmod -R a+rX /opt/skills/ /opt/specialists/ /opt/openclaw-scripts/ /opt/scripts/
+COPY services/chat/scripts/spec/spec-init.js /opt/scripts/spec/spec-init.js
 
-# ── VSCode config (identical to the old kasm-openclaw) ────────────────────────
-# Copied to /opt to be installed into the user volume on first startup
+# VSCode config
 COPY services/devcontainer/config/vscode/settings.json \
-     /opt/devcontainer/config/vscode/settings.json
-COPY services/devcontainer/config/vscode/extensions.txt \
-     /opt/devcontainer/config/vscode/extensions.txt
+     services/devcontainer/config/vscode/extensions.txt \
+     /opt/devcontainer/config/vscode/
 
-# ── Startup script ────────────────────────────────────────────────────────────
-COPY services/devcontainer/scripts/start-devcontainer.sh /start.sh
-RUN chmod +x /start.sh
+RUN chmod -R a+rX /opt/
 
-# ── Volume directories (created for clarity) ──────────────────────────────────
-# These paths will be mounted as per-user volumes at runtime
+# ── Stage 4: Code Server install ───────────────────────────────────────────
+FROM base AS codeserver
+RUN CS_VERSION=$(curl -fsSL "https://api.github.com/repos/coder/code-server/releases/latest" | jq -r .tag_name | sed 's/^v//') \
+     && curl -fsSL "https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server-${CS_VERSION}-linux-amd64.tar.gz" \
+          -o /tmp/code-server.tar.gz \
+     && mkdir -p /opt/code-server \
+     && tar -xzf /tmp/code-server.tar.gz -C /opt/code-server --strip-components=1 \
+     && rm /tmp/code-server.tar.gz
+
+# ── final: clean image ─────────────────────────────────────────────────────
+FROM base
+
+COPY --from=build /opt /
+COPY --from=codeserver /opt/code-server /opt/
+RUN ln -s /opt/code-server/bin/code-server /usr/local/bin/code-server
+
+COPY --chmod=755 services/devcontainer/scripts/entrypoint.sh /usr/local/bin/entrypoint
+
 RUN mkdir -p \
-      /home/coder/.config/Code/User \
-      /home/coder/.local/share/code-server \
-      /home/coder/.openclaw \
-      /workspace \
-      /projects \
- && chown -R coder:coder /home/coder /workspace
+          /home/coder/.config/Code/User \
+          /home/coder/.local/share/code-server \
+          /home/coder/.openclaw \
+          /workspace \
+          /projects \
+     && chown -R coder:coder /home/coder /workspace
 
 USER coder
 WORKDIR /workspace
 
 EXPOSE 8888
 
-CMD ["/start.sh"]
+ENTRYPOINT ["entrypoint"]
