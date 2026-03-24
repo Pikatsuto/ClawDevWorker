@@ -24,13 +24,14 @@ FROM coollabsio/openclaw:latest AS openclaw-base
 FROM docker:dind-rootless AS base
 USER root
 
+RUN deluser rootless 2>/dev/null; delgroup rootless 2>/dev/null; \
+     addgroup -g 1000 coder \
+     && adduser -u 1000 -G coder -s /bin/bash -D coder
+
 ENV HOME=/home/coder \
     USER=coder \
     SHELL=/bin/bash \
     PATH=/home/coder/.cargo/bin:/usr/local/go/bin:/home/coder/.local/bin:$PATH
-
-RUN addgroup -g 1000 coder \
- && adduser -u 1000 -G coder -s /bin/bash -D coder
 
 RUN apk add --no-cache \
         curl wget git ca-certificates gnupg bash \
