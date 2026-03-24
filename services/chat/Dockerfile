@@ -33,6 +33,7 @@ RUN npm install -g openclaw 2>/dev/null || ( \
 COPY shared/opt services/chat/opt \
      /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
+    && npm install -g better-sqlite3 \
     && chmod -R a+rX /opt/
 
 # ── final: clean image ─────────────────────────────────────────────────────

@@ -116,7 +116,9 @@ if [ ! -d "$SKILL_DIR" ]; then
 fi
 
 # Skills updated on every startup
-for skill in cpu-status loop-detect spec-init session-handoff semantic-memory project-context frontend-design staged-diff; do
+for skill in docker-exec cpu-status loop-detect spec-init session-handoff semantic-memory \
+             project-context frontend-design staged-diff bmad user-token git-provider \
+             rules-config branch-clean codebase-analyze agent-fanout; do
     if [ -d "/opt/skills/${skill}" ]; then
         log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
@@ -127,7 +129,7 @@ done
 export SCHEDULER_URL="${SCHEDULER_URL:-http://openclaw-agent:7070}"
 AGENT_GIT_LOGIN="${AGENT_GIT_LOGIN:-agent}"
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://openclaw-agent:9001}"
-export PROXY_URL="${PROXY_URL:-http://localhost:11435}"
+export OLLAMA_PROXY_URL="${OLLAMA_PROXY_URL:-http://localhost:11435}"
 export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/projects}"
 export SURFACE="chat"
 export STAGED_MODE="${STAGED_MODE:-true}"
@@ -287,7 +289,7 @@ const config = {
         model: ollamaModel,
         tools: {
           allow: ['file.read', 'file.write', 'terminal', 'mcp-docs', 'docker-exec'],
-          deny:  ['file.delete', 'git', 'forgejo-mcp', 'browser'],
+          deny:  ['file.delete', 'forgejo-mcp', 'browser'],
         },
         mcpServers: {
           'mcp-docs': {
@@ -304,7 +306,7 @@ const config = {
             },
           },
         },
-        skills: { enabled: ['docker-exec','cpu-status','loop-detect','spec-init','session-handoff','bmad','user-token','git-provider-chat','semantic-memory','project-context','frontend-design','staged-diff'] },
+        skills: { enabled: ['docker-exec','cpu-status','loop-detect','spec-init','session-handoff','bmad','user-token','git-provider','semantic-memory','project-context','frontend-design','staged-diff','rules-config','branch-clean','codebase-analyze','agent-fanout'] },
       },
     ],
   },
