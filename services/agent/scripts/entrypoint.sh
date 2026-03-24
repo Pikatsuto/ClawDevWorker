@@ -122,7 +122,7 @@ docker exec agent-squid squid -k reconfigure 2>/dev/null \
 # ── 4. Skills ─────────────────────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR/skills"
 
-for skill in docker-exec cpu-status loop-detect spec-init session-handoff semantic-memory project-context frontend-design staged-diff; do
+for skill in docker-exec loop-detect session-handoff semantic-memory project-context frontend-design staged-diff; do
     if [ -d "/opt/skills/${skill}" ]; then
         log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
@@ -321,7 +321,7 @@ const config = {
             },
           },
         },
-        skills: { enabled: ['docker-exec', 'cpu-status', 'loop-detect', 'session-handoff', 'semantic-memory', 'project-context', 'frontend-design', 'staged-diff'] },
+        skills: { enabled: ['docker-exec', 'loop-detect', 'session-handoff', 'semantic-memory', 'project-context', 'frontend-design', 'staged-diff'] },
       },
     ],
   },
@@ -339,7 +339,27 @@ else
     log "Existing config — token reloaded"
 fi
 
-# ── 6. Start the OpenClaw gateway ─────────────────────────────────────────
+# ── 6. Start the GPU Scheduler ────────────────────────────────────────────
+log "Starting GPU Scheduler on :${SCHEDULER_PORT:-7070}..."
+export SCHEDULER_PORT="${SCHEDULER_PORT:-7070}"
+export HUMAN_IDLE_MS="${HUMAN_IDLE_MS:-1800000}"
+export POLL_INTERVAL_MS="${POLL_INTERVAL_MS:-15000}"
+export OPENCLAW_AGENT_URL="http://localhost:${WEBHOOK_PORT}"
+
+node /opt/gpu-scheduler/index.js &
+GPU_SCHEDULER_PID=$!
+log "GPU Scheduler started (PID=${GPU_SCHEDULER_PID})"
+
+# ── 7. Start the Orchestrator
+ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-9001}"
+MEMORY_DIR="${OPENCLAW_DIR}/workspace/memory"
+WORKER_IMAGE="${WORKER_IMAGE:-ghcr.io/pikatsuto/cdw-worker:latest}"
+
+node /opt/orchestrator/index.js &
+ORCHESTRATOR_PID=$!
+log "Orchestrator started (PID=${ORCHESTRATOR_PID})"
+
+# ── 8. Start the OpenClaw gateway (exec — replaces shell) ─────────────────────────────────────────
 log "Starting OpenClaw gateway webhook on :${WEBHOOK_PORT}..."
 log "→ Configure in Forgejo: Settings → Webhooks → http://openclaw-agent:${WEBHOOK_PORT}/webhook"
 
@@ -355,22 +375,3 @@ exec env \
         --bind "0.0.0.0" \
         --config "$CONFIG_FILE"
 
-# ── 7. Start the GPU Scheduler ────────────────────────────────────────────
-log "Starting GPU Scheduler on :${SCHEDULER_PORT:-7070}..."
-export SCHEDULER_PORT="${SCHEDULER_PORT:-7070}"
-export HUMAN_IDLE_MS="${HUMAN_IDLE_MS:-1800000}"
-export POLL_INTERVAL_MS="${POLL_INTERVAL_MS:-15000}"
-export OPENCLAW_AGENT_URL="http://localhost:${WEBHOOK_PORT}"
-
-node /opt/gpu-scheduler/index.js &
-GPU_SCHEDULER_PID=$!
-log "GPU Scheduler started (PID=${GPU_SCHEDULER_PID})"
-
-# Start the orchestrator
-ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-9001}"
-MEMORY_DIR="${OPENCLAW_DIR}/workspace/memory"
-WORKER_IMAGE="${WORKER_IMAGE:-ghcr.io/pikatsuto/cdw-worker:latest}"
-
-node /opt/orchestrator/index.js &
-ORCHESTRATOR_PID=$!
-log "Orchestrator started (PID=${ORCHESTRATOR_PID})"
