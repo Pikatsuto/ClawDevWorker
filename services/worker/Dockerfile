@@ -31,7 +31,7 @@ RUN git config --global user.email "agent@clawforge.local" \
     && git config --global pull.rebase false \
     && git config --global push.autoSetupRemote true
 
-COPY shared/opt services/worker/opt \
+COPY shared services/worker \
      /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && chmod -R a+rX /opt/

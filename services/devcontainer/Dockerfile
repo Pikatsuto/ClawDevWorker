@@ -51,7 +51,7 @@ COPY --from=openclaw-base /opt/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
 COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts/
 
-COPY shared/opt services/devcontainer/opt \
+COPY shared services/devcontainer \
      /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && npm install -g better-sqlite3 \

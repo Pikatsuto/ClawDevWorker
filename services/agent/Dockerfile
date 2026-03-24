@@ -38,7 +38,7 @@ RUN npm install -g openclaw 2>/dev/null || ( \
         && npm link \
     )
 
-COPY shared/opt services/agent/opt \
+COPY shared services/agent \
      /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
  && cd /opt/gpu-scheduler && npm install --omit=dev 2>/dev/null || true \
