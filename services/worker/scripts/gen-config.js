@@ -190,7 +190,7 @@ function getAllowedTools(r) {
 
 function getEnabledSkills(r) {
   const sharedSkills = [
-    'session-handoff', 'semantic-memory', 'project-context', 'loop-detect',
+    'session-handoff', 'semantic-memory', 'project-context', 'loop-detect', 'forget',
   ];
   const devSkills = [
     ...sharedSkills, 'git-flow', 'agent-fanout', 'codebase-analyze',

@@ -102,7 +102,8 @@ mkdir -p "$SKILLS_DIR"
 for skill in gpu-dispatch cpu-status loop-detect staged-diff codebase-analyze \
              session-handoff semantic-memory project-context frontend-design \
              spec-init bmad user-token git-provider-chat docker-exec \
-             branch-clean rules-config devcontainer-base agent-fanout; do
+             branch-clean rules-config devcontainer-base agent-fanout \
+             ia-learning forget devcontainer-init; do
     [ -d "/opt/skills/${skill}" ] && \
         cp -r "/opt/skills/${skill}" "$SKILLS_DIR/${skill}" 2>/dev/null || true
 done
@@ -249,6 +250,7 @@ const config = {
             'project-context', 'frontend-design', 'docker-exec',
             'spec-init', 'bmad', 'user-token', 'git-provider-chat',
             'branch-clean', 'rules-config', 'devcontainer-base', 'agent-fanout',
+            'ia-learning', 'forget', 'devcontainer-init',
           ],
         },
         env: {

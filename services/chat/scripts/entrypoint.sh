@@ -118,7 +118,8 @@ fi
 # Skills updated on every startup
 for skill in docker-exec cpu-status loop-detect spec-init session-handoff semantic-memory \
              project-context frontend-design staged-diff bmad user-token git-provider \
-             rules-config branch-clean codebase-analyze agent-fanout; do
+             rules-config branch-clean codebase-analyze agent-fanout \
+             ia-learning forget devcontainer-init; do
     if [ -d "/opt/skills/${skill}" ]; then
         log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
@@ -306,7 +307,7 @@ const config = {
             },
           },
         },
-        skills: { enabled: ['docker-exec','cpu-status','loop-detect','spec-init','session-handoff','bmad','user-token','git-provider','semantic-memory','project-context','frontend-design','staged-diff','rules-config','branch-clean','codebase-analyze','agent-fanout'] },
+        skills: { enabled: ['docker-exec','cpu-status','loop-detect','spec-init','session-handoff','bmad','user-token','git-provider','semantic-memory','project-context','frontend-design','staged-diff','rules-config','branch-clean','codebase-analyze','agent-fanout','ia-learning','forget','devcontainer-init'] },
       },
     ],
   },

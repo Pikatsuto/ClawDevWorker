@@ -122,7 +122,7 @@ docker exec agent-squid squid -k reconfigure 2>/dev/null \
 # ── 4. Skills ─────────────────────────────────────────────────────────────
 mkdir -p "$OPENCLAW_DIR/skills"
 
-for skill in docker-exec loop-detect session-handoff semantic-memory project-context frontend-design staged-diff; do
+for skill in docker-exec loop-detect session-handoff semantic-memory project-context frontend-design staged-diff forget; do
     if [ -d "/opt/skills/${skill}" ]; then
         log "Installing/updating skill ${skill}..."
         cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}"
@@ -321,7 +321,7 @@ const config = {
             },
           },
         },
-        skills: { enabled: ['docker-exec', 'loop-detect', 'session-handoff', 'semantic-memory', 'project-context', 'frontend-design', 'staged-diff'] },
+        skills: { enabled: ['docker-exec', 'loop-detect', 'session-handoff', 'semantic-memory', 'project-context', 'frontend-design', 'staged-diff', 'forget'] },
       },
     ],
   },

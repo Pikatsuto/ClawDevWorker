@@ -206,7 +206,7 @@ node /opt/worker/gen-config.js || fail "openclaw.json generation failed"
 mkdir -p "$OPENCLAW_DIR/skills"
 
 for skill in git-flow agent-fanout loop-detect codebase-analyze \
-             session-handoff semantic-memory project-context frontend-design; do
+             session-handoff semantic-memory project-context frontend-design forget; do
   [ -d "/opt/skills/${skill}" ] && \
     cp -r "/opt/skills/${skill}" "$OPENCLAW_DIR/skills/${skill}" && \
     log "Skill ${skill} installed"
