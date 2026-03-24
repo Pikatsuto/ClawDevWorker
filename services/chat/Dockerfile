@@ -30,23 +30,8 @@ RUN npm install -g openclaw 2>/dev/null || ( \
         && npm link \
     )
 
-RUN mkdir -p /opt/scripts/spec
-COPY services/mcp-docs services/git-provider \
-    services/agent/specialists \
-    /opt/
-COPY services/devcontainer/defaults /opt/devcontainer/defaults/ /opt/specialists/
-COPY services/chat/skills/docker-exec services/chat/skills/cpu-status \
-    services/chat/skills/bmad services/chat/skills/user-token \
-    services/chat/skills/git-provider \
-    services/worker/skills/session-handoff services/worker/skills/semantic-memory \
-    services/worker/skills/project-context services/worker/skills/frontend-design \
-    services/worker/skills/staged-diff services/worker/skills/spec-init \
-    services/worker/skills/loop-detect \
-    /opt/skills/
-COPY services/chat/scripts/dev-manager.js services/chat/scripts/spec \
-    /opt/scripts/
-COPY services/chat/scripts/stream-proxy.js /opt/stream-proxy/stream-proxy.js
-
+COPY shared/opt services/chat/opt \
+     /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && chmod -R a+rX /opt/
 
@@ -64,7 +49,7 @@ ENV OPENCLAW_GATEWAY_PORT=18791 \
     EPHEMERAL_TIMEOUT=60
 
 COPY --from=build /opt /
-COPY --from=build /usr/local/lib/node_modules /usr/local/lib/node_modules/
+COPY --from=build /usr/local/lib/node_modules /usr/local/lib/
 COPY --chmod=755 services/chat/scripts/entrypoint.sh /usr/local/bin/entrypoint
 
 USER rootless

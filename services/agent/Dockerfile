@@ -38,17 +38,8 @@ RUN npm install -g openclaw 2>/dev/null || ( \
         && npm link \
     )
 
-COPY services/mcp-docs services/git-provider \
-    services/agent/gpu-scheduler services/agent/orchestrator \
-    services/agent/specialists \
-    services/agent/openclaw.plugin.json services/worker/skills/loop-detect \
-    /opt/
-COPY services/worker/skills/session-handoff services/worker/skills/semantic-memory \
-    services/worker/skills/project-context services/worker/skills/frontend-design \
-    services/worker/skills/staged-diff services/worker/skills/spec-init \
-    services/agent/skills/docker-exec services/chat/skills/cpu-status \
-    /opt/skills/
-
+COPY shared/opt services/agent/opt \
+     /
 RUN cd /opt/mcp-docs && npm install --omit=dev \
  && cd /opt/gpu-scheduler && npm install --omit=dev 2>/dev/null || true \
  && chmod -R a+rX /opt/
