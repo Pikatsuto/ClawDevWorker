@@ -836,7 +836,30 @@ const server = http.createServer(async (req, res) => {
   // ── POST /scheduler-event ──────────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/scheduler-event') {
     const body = await readBody(req);
-    log(`Scheduler event: ${body.event} taskId=${body.taskId}`);
+    log(`Scheduler event: ${body.event} taskId=${body.taskId || 'n/a'}`);
+
+    if (body.event === 'pause' && body.taskId) {
+      // Find which pipeline has this taskId as active worker, mark as paused
+      for (const [key, pipeline] of Object.entries(pipelines)) {
+        if (pipeline.activeWorker && pipeline.status === 'running') {
+          const [repo, issueId] = key.split('::');
+          setPipeline(repo, issueId, { ...pipeline, status: 'paused_gpu', pausedAt: new Date().toISOString() });
+          log(`Pipeline ${key} paused (GPU scheduler — HUMAN_EXCLUSIVE)`);
+          break;
+        }
+      }
+    } else if (body.event === 'resume' && body.taskId) {
+      for (const [key, pipeline] of Object.entries(pipelines)) {
+        if (pipeline.status === 'paused_gpu') {
+          const [repo, issueId] = key.split('::');
+          setPipeline(repo, issueId, { ...pipeline, status: 'running', pausedAt: null });
+          log(`Pipeline ${key} resumed (GPU available)`);
+          break;
+        }
+      }
+    }
+    // slot-ready is handled by the worker directly (not orchestrator)
+
     res.writeHead(200); res.end('ok');
     return;
   }

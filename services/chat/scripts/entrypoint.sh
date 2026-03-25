@@ -16,7 +16,7 @@ GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18791}"
 OLLAMA_URL="http://localhost:11435"  # local stream-proxy — dispatches via scheduler
 OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3.5:27b-q3_k_m}"
 OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD:-}"
-PROXY_URL="http://host-gateway:3128"
+SQUID_PROXY_URL="http://host-gateway:3128"
 EPHEMERAL_MEMORY="${EPHEMERAL_MEMORY:-512m}"
 EPHEMERAL_CPUS="${EPHEMERAL_CPUS:-0.5}"
 EPHEMERAL_TIMEOUT="${EPHEMERAL_TIMEOUT:-60}"
@@ -130,7 +130,7 @@ done
 export SCHEDULER_URL="${SCHEDULER_URL:-http://openclaw-agent:7070}"
 AGENT_GIT_LOGIN="${AGENT_GIT_LOGIN:-agent}"
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://openclaw-agent:9001}"
-export OLLAMA_PROXY_URL="${OLLAMA_PROXY_URL:-http://localhost:11435}"
+export OLLAMA_SQUID_PROXY_URL="${OLLAMA_SQUID_PROXY_URL:-http://localhost:11435}"
 export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/projects}"
 export SURFACE="chat"
 export STAGED_MODE="${STAGED_MODE:-true}"
@@ -152,7 +152,7 @@ GATEWAY_TOKEN=$(cat "$OPENCLAW_DIR/.gateway_token")
 
 if [ ! -f "$CONFIG_FILE" ]; then
     log "Generating openclaw.json..."
-    export CONFIG_FILE GATEWAY_PORT GATEWAY_TOKEN OLLAMA_URL OLLAMA_MODEL PROXY_URL OPENCLAW_GATEWAY_PASSWORD OPENCLAW_DIR
+    export CONFIG_FILE GATEWAY_PORT GATEWAY_TOKEN OLLAMA_URL OLLAMA_MODEL SQUID_PROXY_URL OPENCLAW_GATEWAY_PASSWORD OPENCLAW_DIR
     export EPHEMERAL_MEMORY EPHEMERAL_CPUS EPHEMERAL_TIMEOUT GITHUB_TOKEN
 
     node << 'NODESCRIPT'
@@ -164,7 +164,7 @@ const ollamaUrl    = 'http://localhost:11435';  // local stream-proxy — smart 
 const ollamaModel  = process.env.OLLAMA_MODEL            || 'qwen3.5:27b-q3_k_m';
 const gwPassword   = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
 const workspaceDir = process.env.OPENCLAW_DIR + '/workspace';
-const proxyUrl     = process.env.PROXY_URL               || 'http://host-gateway:3128';
+const proxyUrl     = process.env.SQUID_PROXY_URL               || 'http://host-gateway:3128';
 const mem          = process.env.EPHEMERAL_MEMORY        || '512m';
 const cpus         = process.env.EPHEMERAL_CPUS          || '0.5';
 const timeout      = process.env.EPHEMERAL_TIMEOUT       || '60';
@@ -383,8 +383,8 @@ log "Web interface: http://$(hostname -i 2>/dev/null | awk '{print $1}'):${GATEW
 
 # FIX 3: HTTPS_PROXY explicitly in the openclaw process environment
 exec env \
-    HTTP_PROXY="$PROXY_URL" \
-    HTTPS_PROXY="$PROXY_URL" \
+    HTTP_PROXY="$SQUID_PROXY_URL" \
+    HTTPS_PROXY="$SQUID_PROXY_URL" \
     NO_PROXY="localhost,127.0.0.1,host-gateway" \
     DOCKER_HOST="$DOCKER_HOST" \
     openclaw gateway start \

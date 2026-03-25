@@ -89,8 +89,8 @@ function parseFile(absPath) {
     const importRe = /"([^"]+)"/g;
     let m;
     while ((m = importRe.exec(content)) !== null) imports.push(m[1]);
-    const funcRe = /func\s+(?:\(\w+\s+\*?\w+\)\s+)?([A-Z]\w*)\s*\(/g;
-    while ((m = funcRe.exec(content)) !== null) symbols.push(m[1]); // Exported only
+    const funcRe = /func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)\s*\(/g;
+    while ((m = funcRe.exec(content)) !== null) symbols.push(m[1]);
   }
 
   return {
