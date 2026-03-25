@@ -313,6 +313,27 @@ async function routeIssue(repo, issueId, issue, rules) {
   return null;
 }
 
+// ── Preload model for next gate ───────────────────────────────────────────────
+
+async function preloadModel(modelId) {
+  try {
+    const data = JSON.stringify({ modelId });
+    const url = new URL(SCHEDULER_URL + '/preload');
+    const res = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: url.hostname, port: url.port, path: '/preload', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': data.length } }, resolve);
+      req.on('error', reject);
+      req.end(data);
+    });
+    let body = '';
+    for await (const chunk of res) body += chunk;
+    const result = JSON.parse(body);
+    log(`Preload ${modelId}: ${result.status}`);
+  } catch (e) {
+    log(`Preload ${modelId} failed: ${e.message}`, 'WARN');
+  }
+}
+
 // ── Spawn a worker container ──────────────────────────────────────────────────
 
 function spawnWorker(repo, issueId, role, branch, opts = {}) {
@@ -489,6 +510,16 @@ async function runNextGate(repo, issueId) {
       activeWorker: { role: gate, containerId: containerId.slice(0, 12), startedAt: new Date().toISOString() },
     });
     audit('gate_start', { repo, issueId, gate, containerId: containerId.slice(0, 12) });
+
+    // Preload next gate's model while current gate works
+    const nextIdx = pipeline.currentGate + 1;
+    if (nextIdx < pipeline.gates.length) {
+      const nextGate = pipeline.gates[nextIdx];
+      const nextSpec = pipeline.specialistModels?.[nextGate];
+      const nextEnv = process.env[`MODEL_${nextGate.toUpperCase()}`];
+      const nextModel = nextEnv || nextSpec?.model || process.env.OLLAMA_MODEL || 'qwen3.5:9b';
+      preloadModel(nextModel).catch(() => {});
+    }
   } catch (e) {
     log(`Gate ${gate} spawn failed: ${e.message}`, 'WARN');
     await handleGateFail(repo, issueId, gate, e.message);

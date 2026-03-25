@@ -12,6 +12,7 @@
  *   POST /enqueue                  → autonomous agent task
  *   POST /release                  → release agent slot
  *   POST /score                    → compute score without enqueuing
+ *   POST /preload                  → preload a model in background (if VRAM allows)
  *   POST /chat/request             → dispatch model for chat/vscode
  *   POST /chat/fanout              → enqueue N parallel VSCode subtasks
  *   POST /chat/release             → release chat slot
@@ -1225,6 +1226,22 @@ const server = http.createServer(async(req,res) => {
       await processQueue();
     }
     return json(res,200,{ok:true,totalFree:totalFree()});
+  }
+
+  // ── POST /preload — preload a model in background if VRAM allows ─────────
+  if (req.method==='POST'&&url==='/preload') {
+    const {modelId} = await readBody(req);
+    if (!modelId || !MODELS[modelId]) return json(res,400,{error:'unknown model'});
+    if (state.loadedModels.has(modelId)) return json(res,200,{status:'already_loaded'});
+    const model = MODELS[modelId];
+    let gpus = allocateVram(model.vram);
+    if (!gpus) { await evictLRU(model.vram); gpus = allocateVram(model.vram); }
+    if (!gpus) return json(res,200,{status:'no_vram',free:totalFree(),needed:model.vram});
+    await loadModel(modelId);
+    if (!state.loadedModels.has(modelId))
+      state.loadedModels.set(modelId,{vram:model.vram,gpus,agentSlots:new Map(),loadedAt:Date.now(),idleSince:Date.now()});
+    log(`🔮 Preloaded ${modelId} for next gate (free=${totalFree()}GB)`);
+    return json(res,200,{status:'preloaded',modelId,free:totalFree()});
   }
 
   // ── POST /score ───────────────────────────────────────────────────────────
