@@ -62,6 +62,7 @@ const UPGRADE_THRESHOLD     = parseInt(process.env.UPGRADE_THRESHOLD      || '30
 const DOWNGRADE_THRESHOLD   = parseInt(process.env.DOWNGRADE_THRESHOLD    || '20');
 const DOWNGRADE_STREAK_MAX  = parseInt(process.env.DOWNGRADE_STREAK_MAX   || '3');
 const MIN_AGENT_VRAM        = parseInt(process.env.MIN_AGENT_VRAM         || '2');
+const KEEPALIVE_MAX         = parseInt(process.env.KEEPALIVE_MAX          || '2');
 
 // ── Model catalog — configurable via .env ─────────────────────────────────
 // MODEL_COMPLEX   → score ≥ 70  (default: qwen3.5:27b-q3_k_m, 14GB)
@@ -299,11 +300,13 @@ function dispatchChatModel(score) {
     return { modelId:best.modelId, ollamaUrl:OLLAMA_URL, fallback:false, reuse:true };
   }
 
-  // 3: load ideal model
+  // 3: load ideal model (evict idle LRU if needed)
   const idealModel = MODELS[idealId];
-  if (idealModel && totalFree()>=idealModel.vram) {
-    log(`Chat dispatch: loading ${idealId} (score=${score}, free=${totalFree()}GB)`);
-    return { modelId:idealId, ollamaUrl:OLLAMA_URL, fallback:false, reuse:false };
+  if (idealModel) {
+    if (totalFree()>=idealModel.vram || await evictLRU(idealModel.vram)) {
+      log(`Chat dispatch: loading ${idealId} (score=${score}, free=${totalFree()}GB)`);
+      return { modelId:idealId, ollamaUrl:OLLAMA_URL, fallback:false, reuse:false };
+    }
   }
 
   // 4: fallback CPU
@@ -706,6 +709,45 @@ async function unloadModel(modelId) {
   } catch(e){log(`Error unloading ${modelId}: ${e.message}`,'WARN');}
 }
 
+/**
+ * Evict idle models (LRU) to free at least neededVram GB.
+ * Only evicts models with agentSlots.size === 0 and no chat sessions.
+ * Returns true if enough VRAM was freed.
+ */
+async function evictLRU(neededVram) {
+  const idleModels = [...state.loadedModels.entries()]
+    .filter(([, m]) => m.agentSlots.size === 0 && m.idleSince)
+    .filter(([modelId]) => ![...state.sessionModels.values()].some(s => s.modelId === modelId))
+    .sort((a, b) => a[1].idleSince - b[1].idleSince);
+
+  let freed = 0;
+  for (const [modelId, loaded] of idleModels) {
+    if (totalFree() + freed >= neededVram) break;
+    releaseVram(loaded.gpus, loaded.vram);
+    await unloadModel(modelId);
+    freed += loaded.vram;
+    log(`♻️ Evicted idle model ${modelId} (LRU, freed ${loaded.vram}GB)`);
+  }
+  return totalFree() >= neededVram;
+}
+
+/**
+ * Enforce KEEPALIVE_MAX: if more than KEEPALIVE_MAX models are idle, evict the oldest.
+ */
+async function enforceKeepAliveMax() {
+  const idleModels = [...state.loadedModels.entries()]
+    .filter(([, m]) => m.agentSlots.size === 0 && m.idleSince)
+    .filter(([modelId]) => ![...state.sessionModels.values()].some(s => s.modelId === modelId))
+    .sort((a, b) => a[1].idleSince - b[1].idleSince);
+
+  while (idleModels.length > KEEPALIVE_MAX) {
+    const [modelId, loaded] = idleModels.shift();
+    releaseVram(loaded.gpus, loaded.vram);
+    await unloadModel(modelId);
+    log(`♻️ Evicted idle model ${modelId} (exceeded KEEPALIVE_MAX=${KEEPALIVE_MAX})`);
+  }
+}
+
 // ── Human priority — HUMAN_SHARED / HUMAN_EXCLUSIVE cohabitation ───────────
 //
 // HUMAN_SHARED    : human active, agents continue if enough VRAM
@@ -931,8 +973,10 @@ async function processQueue() {
     try {
       let loaded = state.loadedModels.get(allocation.modelId);
       if (!allocation.reuse||!loaded) {
+        if (loaded && loaded.idleSince) { delete loaded.idleSince; }
         const model = MODELS[allocation.modelId];
-        const gpus  = allocateVram(model.vram);
+        let gpus = allocateVram(model.vram);
+        if (!gpus) { await evictLRU(model.vram); gpus = allocateVram(model.vram); }
         if (!gpus){log(`Insufficient VRAM for ${allocation.modelId}`,'WARN'); continue;}
         await loadModel(allocation.modelId);
         loaded={vram:model.vram,gpus,agentSlots:new Map(),loadedAt:Date.now()};
@@ -940,6 +984,7 @@ async function processQueue() {
       }
       const model=MODELS[allocation.modelId];
       if (loaded.agentSlots.size>=model.maxAgents){log(`${allocation.modelId} saturated`,'WARN'); continue;}
+      if (loaded.idleSince) delete loaded.idleSince;
       const slotId=`slot-${++slotCounter}`;
       loaded.agentSlots.set(slotId,task.taskId);
       const colocGroupId=task.parentGroup||findOrCreateColocGroup(task);
@@ -970,7 +1015,7 @@ const server = http.createServer(async(req,res) => {
       mode:state.mode, activeSurface:state.activeSurface, humanLastSeen:state.humanLastSeen,
       gpus:GPUS.map(g=>({...g,free:g.total-g.reserved,usedPct:Math.round(g.reserved/g.total*100)})),
       totalFree:totalFree(), totalVram:totalVram(),
-      loadedModels:[...state.loadedModels.entries()].map(([id,m])=>({modelId:id,vram:m.vram,gpus:m.gpus,agents:m.agentSlots.size,maxAgents:MODELS[id]?.maxAgents,quality:MODELS[id]?.quality})),
+      loadedModels:[...state.loadedModels.entries()].map(([id,m])=>({modelId:id,vram:m.vram,gpus:m.gpus,agents:m.agentSlots.size,maxAgents:MODELS[id]?.maxAgents,quality:MODELS[id]?.quality,idle:m.idleSince?Date.now()-m.idleSince:null})),
       activeSlots:[...state.activeSlots.entries()].map(([id,s])=>({slotId:id,...s})),
       chatSlots:[...state.chatSlots.entries()].map(([id,s])=>({slotId:id,...s})),
       colocGroups:[...state.colocGroups.entries()].map(([id,g])=>({groupId:id,...g})),
@@ -1161,7 +1206,11 @@ const server = http.createServer(async(req,res) => {
     const loaded=state.loadedModels.get(slot.modelId);
     if (loaded) {
       loaded.agentSlots.delete(slotId);
-      if (loaded.agentSlots.size===0){releaseVram(loaded.gpus,loaded.vram); await unloadModel(slot.modelId);}
+      if (loaded.agentSlots.size===0){
+        loaded.idleSince = Date.now();
+        log(`💤 ${slot.modelId} idle (kept alive, free=${totalFree()}GB)`);
+        await enforceKeepAliveMax();
+      }
     }
     if (slot.colocGroup) {
       const g=state.colocGroups.get(slot.colocGroup);
