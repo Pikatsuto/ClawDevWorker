@@ -1,0 +1,25 @@
+{
+  "name": "clawdevworker",
+  "version": "1.0.0",
+  "description": "Autonomous multi-agent development stack: ephemeral Code Server + Ollama + specialist OpenClaw agents on local GPU.",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pikatsuto/ClawDevWorker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Pikatsuto/ClawDevWorker/issues"
+  },
+  "homepage": "https://github.com/Pikatsuto/ClawDevWorker#readme",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
+}
