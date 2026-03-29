@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { join, dirname } from 'node:path';
-import { loadProviders, getProviderForRepo } from '../../../git-provider/index.js';
+import { loadProviders, getProviderForRepo } from '#shared/git-provider/index.js';
 
 interface SubagentResult {
   status: string;

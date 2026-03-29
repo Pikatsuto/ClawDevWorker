@@ -14,6 +14,9 @@
   "author": "",
   "license": "ISC",
   "type": "module",
+  "imports": {
+    "#shared/git-provider/*": "./shared/opt/git-provider/*"
+  },
   "bugs": {
     "url": "https://github.com/Pikatsuto/ClawDevWorker/issues"
   },

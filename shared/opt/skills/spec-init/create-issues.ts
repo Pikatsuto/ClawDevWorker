@@ -15,7 +15,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { loadProviders, getProviderForRepo } from '../../git-provider/index.js';
+import { loadProviders, getProviderForRepo } from '#shared/git-provider/index.js';
 
 interface Story {
   usId: string;
