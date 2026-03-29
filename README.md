@@ -422,4 +422,4 @@ specialists:
 
 ## License
 
-ISC
+GPL-3.0
