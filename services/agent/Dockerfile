@@ -50,8 +50,8 @@ RUN cd /build && npm ci \
  && cp -r /build/dist/services/agent/opt/* /opt/
 
 # Copy non-TS assets (SKILL.md, workflows, specialists .md, etc.)
-COPY shared/opt /
-COPY services/agent/opt /
+COPY shared /
+COPY services/agent /
 
 # Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \

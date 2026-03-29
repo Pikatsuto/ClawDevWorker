@@ -64,8 +64,8 @@ RUN cd /build && npm ci \
  && cp -r /build/dist/services/devcontainer/opt/* /opt/
 
 # Copy non-TS assets (SKILL.md, config, etc.)
-COPY shared/opt /
-COPY services/devcontainer/opt /
+COPY shared /
+COPY services/devcontainer /
 
 # Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \

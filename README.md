@@ -1,272 +1,253 @@
 # ClawDevWorker
 
-Autonomous multi-agent development stack: ephemeral Code Server + Ollama + specialist OpenClaw agents on local GPU.
+**Your entire dev team, running on your own GPU.**
 
-Agents receive Forgejo or GitHub issues, analyze them, code, review through an RBAC pipeline, and open PRs — without human intervention. Humans retain control via the chat and interactive Code Server sessions.
+ClawDevWorker is an autonomous multi-agent development stack that turns a single server with a GPU into a complete software factory. Drop an issue, walk away — 12 specialist AI agents will analyze it, architect the solution, write the code, audit for security flaws, write tests, produce documentation, and open a clean PR for you to review. All of this happens on your hardware, with your models, behind your firewall. No cloud API, no per-token billing, no data leaving your infrastructure.
+
+When you want to work alongside the agents, open a browser or connect your local VSCode via SSH — you get a full dev environment with the same AI stack available. The AI remembers what it learned across sessions. You can teach it new concepts interactively, and it will apply that knowledge automatically in future work.
+
+This is not a chatbot wrapper. It's a self-hosted, GPU-optimized, multi-agent development platform with persistent memory, intelligent scheduling, and full pipeline automation.
+
+---
+
+## What it looks like in practice
+
+**Autonomous mode** — You assign an issue to the agent on Forgejo or GitHub. The orchestrator reads your pipeline config, routes the issue to the right specialists, and runs them in sequence on a shared branch. Each specialist focuses on its expertise: the architect plans, the fullstack implements, security audits, QA writes tests, doc produces documentation. One clean PR comes out the other end. You review it, leave comments if needed (the agents will fix them automatically), and merge when satisfied.
+
+**Interactive mode** — You type `/dev create owner/repo` in the chat. A Code Server instance spins up in seconds, accessible from your browser or your local VSCode via SSH. The AI assists you as you code, with access to the full documentation search engine, project memory, and specialist knowledge. When you're done, `/dev release` destroys the container — your VSCode profile and project data persist for next time.
+
+**Learning mode** — You run `/ia-learning start` and teach the AI a new concept, framework, or workflow. It researches documentation, takes notes, and you validate before it saves. From then on, whenever that topic comes up in any conversation — chat, worker, or dev session — the AI silently recalls the relevant knowledge without you having to repeat yourself.
+
+**When things go wrong** — If the AI gets stuck in a loop, `loop-detect` catches it. If a conversation derails, `/forget` cleans the context without starting over. If a gate fails 3 times, the system escalates to you with a detailed summary of what was tried. The AI never guesses, never hallucinates silently, never abandons a feasible task.
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **12 specialist agents** | architect, frontend, backend, fullstack, devops, security, qa, doc, marketing, design, product, bizdev — each with a dedicated system prompt and model |
+| **RBAC pipeline** | Configurable per-project gate sequence, automatic retry with model upgrade, dependency DAG between issues |
+| **Intelligent GPU scheduling** | VRAM cohabitation (human + agents), LRU keep-alive, next-gate preloading, dynamic upgrade/downgrade |
+| **Persistent learning** | `/ia-learning` sessions with heuristic trigger matching + 0.8b real-time extraction for automatic context injection |
+| **Controlled forgetting** | `/forget` removes messages from context — in interactive mode (user) and autonomous mode (loop recovery) |
+| **Code Server + SSH** | Browser-based or local VSCode via SSH, with DinD for devcontainers, all AI tools available |
+| **Documentation search** | 3-level cascade: 1000+ self-hosted docs (DevDocs) → official APIs → web scraping (SearXNG + nodriver) |
+| **Multi-agent fan-out** | Decompose large tasks into subtasks, execute in parallel on separate branches, aggregate results |
+| **Dual git provider** | Forgejo and GitHub App supported simultaneously |
+| **Session handoff** | Save and resume sessions across chat, VSCode, and workers — shared via `project_data` volume |
+| **Semantic memory** | Per-project SQLite memory shared across all surfaces |
+| **Incremental codebase index** | AST-based index with git-diff updates, symbol search, impact radius analysis |
+| **Network isolation** | Rootless containers, squid whitelist proxy, segmented networks, ephemeral by default |
+| **TypeScript codebase** | Strict typing, ES2024, ESM imports, compiled with `tsc` 6 |
+| **Hash-based CI** | Only changed services are rebuilt — per-container hash stored in GHCR |
 
 ---
 
 ## Architecture
 
 ```
-Internet
- └── chat.example.com          → Coolify → openclaw-chat
- └── dev-<id>.DEV_DOMAIN       → Coolify → ephemeral Code Server container
- └── ssh.dev-<id>.DEV_DOMAIN   → Coolify → container sshd (if /ssh-key configured)
+                                    Internet
+                                       |
+                              [Coolify / Traefik]
+                              /        |        \
+                   chat.<domain>  dev-<id>.<domain>  forgejo/github
+                        |              |                   |
+                 +-----------+  +-----------+      +-----------+
+                 |  Chat     |  | DevContainer|    |  Agent    |
+                 |  DinD     |  | CodeServer |    |  DinD     |
+                 |  stream-  |  | sshd       |    |  GPU sched|
+                 |  proxy    |  | DinD       |    |  Orchestr.|
+                 |  dev-mgr  |  | OpenClaw   |    |  Webhooks |
+                 +-----------+  +-----------+      +-----------+
+                        \           |              /
+                    [backend network — internal]
+                    /              |              \
+             +--------+    +----------+     +--------+
+             | Ollama |    | mcp-docs |     | Worker |
+             | GPU    |    | DevDocs  |     | (ephem)|
+             +--------+    | SearXNG  |     +--------+
+             +--------+    | nodriver |
+             | Ollama |    +----------+
+             | CPU    |
+             +--------+
 ```
 
-### Dev sessions — ephemeral vs persistent
+### Services
 
-```
-EPHEMERAL (--rm, destroyed on /dev release or 30min idle):
-  System packages, node_modules, build artifacts
+| Service | Image | Role |
+|---------|-------|------|
+| `ollama` | `ollama/ollama` | GPU inference |
+| `ollama-cpu` | `ollama/ollama` | CPU orchestration, routing, learn extraction |
+| `openclaw-agent` | `cdw-agent` | GPU scheduler + pipeline orchestrator + webhooks |
+| `openclaw-chat` | `cdw-chat` | Chat interface + commands + Ollama stream proxy |
+| `devcontainer` | `cdw-devcontainer` | Code Server + SSH (dynamically spawned) |
+| `worker` | `cdw-worker` | Ephemeral agent (one gate, one specialist, exit) |
+| `devdocs` | `freecodecamp/devdocs` | Offline documentation (1000+ docsets) |
+| `searxng` | `cdw-searxng` | Local search engine |
+| `browserless` | `cdw-browserless` | Headless browser for web scraping |
+| `mcp-docs` | `cdw-mcp-docs` | MCP documentation server (3-level cascade) |
+| `cdw-squid` | `cdw-squid` | Outbound whitelist proxy |
 
-PERSISTENT (per-user volumes):
-  VSCode profile (settings, keybindings)
-  Installed extensions
-  OpenClaw config + SSH key
+### Networks
 
-PERSISTENT (git):
-  Code → Forgejo / GitHub
-  Environment → .devcontainer/devcontainer.json in the repo
+| Network | Access | Purpose |
+|---------|--------|---------|
+| `backend` | internal | Ollama GPU + CPU |
+| `mcp-net` | internal | agents ↔ mcp-docs / devdocs / searxng / browserless |
+| `proxy-internal-net` | internal | agents ↔ squid (whitelisted internet) |
+| `proxy-net` | outbound | squid → internet |
+| `coolify` | external | Coolify reverse proxy (Traefik) |
 
-PERSISTENT (shared project_data volume):
-  Per-project semantic memory (SQLite)
-  Session handoffs
-  Incremental codebase index
-```
+---
 
-### GPU scheduler — 3 cohabitation modes
+## Commands
 
-```
-AGENT_ACTIVE     → autonomous agents free, all VRAM available
-HUMAN_SHARED     → dev session active, agents continue if VRAM ≥ 2GB free
-HUMAN_EXCLUSIVE  → VRAM full, agents paused (queued)
-```
+### Project initialization
 
-Model upgrade/downgrade:
-- **Chat / Code Server** — suggestion displayed in session, `/upgrade` or `/downgrade` to confirm
-- **Autonomous worker** — silent upgrade/downgrade based on complexity score
+| Command | Action |
+|---------|--------|
+| `/spec init owner/repo` | Create repo, configure webhook + branch protection, run BMAD, generate issues |
+| `/spec push owner/repo` | Push BMAD artifacts + create issues |
 
-### 12 specialist agents
+### Dev sessions
 
-**Technical:** `architect` `frontend` `backend` `fullstack` `devops` `security` `qa` `doc`
+| Command | Action |
+|---------|--------|
+| `/dev create owner/repo` | Spawn Code Server + SSH with cloned repo |
+| `/dev release` | Close the session |
+| `/dev status` | Active sessions and URLs |
 
-**Business:** `marketing` `design` `product` `bizdev`
+### AI learning
 
-Each specialist has a dedicated system prompt. Routing priority: git labels (manual override) → trigger matching (rules.yaml keywords vs issue text) → CPU disambiguation → ask human.
+| Command | Action |
+|---------|--------|
+| `/ia-learning start` | Start a learning session |
+| `/ia-learning review` | Validate notes before compilation |
+| `/ia-learning stop "name"` | Compile into persistent learn |
+| `/ia-learning list` | List project learns |
+| `/ia-learning inject "name"` | Force-inject a learn into context |
 
-Per-specialist model defaults:
-- **Reasoning** (architect, security) → `qwen3.5:27b-q3_k_m`
-- **Code** (fullstack, backend, frontend, devops, qa) → `qwen3.5:9b`
-- **Writing** (doc, marketing, design, product, bizdev) → `mistral:7b`
+### Context
 
-Override per role via `MODEL_<ROLE>` env var or `model:` field in rules.yaml.
+| Command | Action |
+|---------|--------|
+| `/project select <name>` | Load project context |
+| `/project status` | Current issues and PRs |
+| `/handoff` | Save session state |
+| `/resume latest` | Resume last session |
+| `/remember <query>` | Search project memory |
+| `/learn <fact>` | Memorize a decision |
 
-### Per-project configurable RBAC pipeline
+### Codebase
+
+| Command | Action |
+|---------|--------|
+| `/analyze` | Incremental index update (git-diff) |
+| `/search <query>` | Search the index |
+| `/impact <file>` | Impact radius before modification |
+
+### Pipeline control (in issue/PR comments)
+
+| Command | Action |
+|---------|--------|
+| `/stop` | Freeze the pipeline |
+| `/retry` | Restart from current gate |
+| (any comment on PR) | Re-triggers relevant gates |
+
+### Forgetting
+
+| Command | Action |
+|---------|--------|
+| `/forget preview` | Preview what will be deleted |
+| `/forget last N` | Delete last N messages |
+| `/forget since Xm` | Delete messages from the last X minutes |
+
+### GPU
+
+| Command | Action |
+|---------|--------|
+| `/gpu status` | Free VRAM, mode, active slots |
+| `/wait-gpu` | Wait for a GPU slot (if CPU fallback) |
+
+---
+
+## GPU scheduling
+
+### 3 cohabitation modes
+
+| Mode | Behavior |
+|------|----------|
+| `AGENT_ACTIVE` | Agents run freely, all VRAM available |
+| `HUMAN_SHARED` | Human active, agents continue if VRAM ≥ 2GB free |
+| `HUMAN_EXCLUSIVE` | VRAM full, agents paused (queued) |
+
+### Model selection
+
+| Tier | Default model | Score range | VRAM |
+|------|--------------|-------------|------|
+| Complex | `qwen3.5:27b-q3_k_m` | ≥ 70 | 14GB |
+| Standard | `qwen3.5:9b` | 30–70 | 5GB |
+| Light | `qwen3.5:4b` | 10–30 | 3GB |
+| Trivial | `qwen3.5:2b` | < 10 | 2GB |
+| CPU | `qwen3.5:0.8b` | fallback | 0GB |
+
+### Optimizations
+
+- **Keep-alive LRU**: top 2 idle models stay loaded in VRAM
+- **Next-gate preload**: orchestrator pre-loads the next specialist's model while the current gate works
+- **Dynamic upgrade/downgrade**: chat sessions propose model changes based on complexity streaks
+- **CPU ambiguity check**: 0.8b arbitrates when the heuristic score falls in the grey zone
+
+---
+
+## Pipeline configuration
 
 ```yaml
-# .coderclaw/rules.yaml in each repo
+# .coderclaw/rules.yaml
 pipeline:
   gates: [architect, fullstack, security, qa, doc]
   require_all: true
   max_retries: 3
   retry_upgrade: true
-```
 
-Unlisted gates = ignored. `require_all: false` = parallel gates without blocking.
-
-### Git flow
-
-```
-feat/42-dark-mode (shared branch, all gates commit here)
-  ├── architect commits (ADR, decomposition)
-  ├── fullstack commits (implementation)
-  ├── security commits (fixes found by audit)
-  ├── qa commits (tests)
-  └── doc commits (documentation)
-→ Single PR: feat/42-dark-mode → main
-→ Human reviews and merges
-→ auto-promote creates promotion PR if gitflow enabled
-→ auto-release creates tag + changelog from conventional commits
-```
-
-Configurable in `.coderclaw/rules.yaml`:
-```yaml
-git_flow:
-  strategy: trunk          # trunk | gitflow
-  target_branch: main
+specialists:
+  architect:
+    triggers: [architecture, adr, migration, refactoring, breaking change]
+    model: qwen3.5:27b-q3_k_m
+  security:
+    triggers: [security, injection, xss, csrf, auth, password, token]
+  frontend:
+    triggers: [ui, ux, component, page, vue, react, responsive]
+  # ... etc
 
 releases:
   enabled: true
-  strategy: conventional   # conventional | manual
+  strategy: conventional
   prefix: v
 ```
 
-### Issue dependency DAG
-
-```markdown
-## US-003 — Dashboard
-**Depends on:** US-001, US-002
-```
-
-The orchestrator waits for US-001 and US-002 to be `Done` before starting US-003.
-
-### Human brain model
-
-```
-Amygdala    → loop-detect + handleGateFail + escalateToHuman
-Hippocampus → semantic-memory + session-handoff + incremental codebase-index
-Cortex      → orchestrator + GPU scheduler + routing 12 specialists + DAG + RBAC
-```
-
 ---
 
-## Main commands
+## Deployment
 
-### Dev sessions
-
-```
-/dev create owner/repo              → ephemeral Code Server with cloned repo
-/dev create owner/repo --password   → with authentication
-/dev release                        → close the session
-/dev status                         → active sessions and URLs
+```bash
+cp .env.example .env    # Fill in: domains, tokens, GPU config
+docker compose up -d
+docker compose logs ollama-init    # Verify model downloads
+docker compose logs -f openclaw-agent    # Watch the agent
 ```
 
-If `/ssh-key` is configured, each session also exposes SSH access compatible with VS Code Desktop, Cursor, Windsurf and JetBrains Gateway.
+### Checklist
 
-### SSH key (native IDE access)
-
-```
-/ssh-key set <public_key>           → save for all sessions
-/ssh-key status                     → check if configured
-/ssh-key clear                      → remove
-```
-
-### Project initialization
-
-```
-/spec init owner/repo               → /rules → BMAD → PRD + Architecture + User Stories → issues
-/spec init owner/repo --provider github  → same, on GitHub instead of Forgejo
-/spec status owner/repo             → pipeline status
-```
-
-### User git token
-
-```
-/token set <token>                  → personal token (to create repos on your account)
-/token status
-/token clear
-```
-
-### Project context
-
-```
-/project select <name>              → load memory + handoff + rules
-/project status                     → current issues and PRs
-/project code                       → read-only code
-/project list                       → list projects
-```
-
-### Session handoff
-
-```
-/handoff                            → save complete session state
-/resume latest                      → resume the last session
-/resume <id>                        → resume a specific session
-```
-
-### Semantic memory
-
-```
-/remember <query>                   → search project memory
-/learn <fact>                       → memorize a decision
-/memory list                        → recent entries
-```
-
-### Codebase
-
-```
-/analyze                            → incremental index update (git-diff)
-/analyze --full                     → forced full scan
-/search <query>                     → search the index
-/impact <file>                      → impact radius before modification
-```
-
-### Staged diff (interactive sessions)
-
-```
-/diff                               → show pending changes
-/diff src/auth.ts                   → diff a single file
-/accept                             → atomic commit of all changes
-/accept src/auth.ts                 → commit a single file
-/reject                             → discard all changes
-```
-
-### GPU
-
-```
-/gpu status                         → free VRAM, mode, active slots
-/gpu models                         → available models
-```
-
-### Pipeline rules
-
-```
-/rules                              → interactive pipeline configuration
-/rules owner/repo                   → configure rules for a specific repo
-```
-
-### Branch cleanup
-
-```
-/clean                              → interactive branch cleanup (current project)
-/clean owner/repo                   → cleanup branches on a specific repo
-```
-
-### Pipeline control (in issue/PR comments)
-
-```
-/stop                               → freeze the pipeline on this issue
-/retry                              → restart the pipeline from current gate
-(any comment on a PR)               → auto-triggers relevant gates
-(comment on merged PR)              → resumes work on the same branch
-```
-
----
-
-## Devcontainer.json
-
-Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
-
-```json
-{
-  "name": "My project",
-  "postCreateCommand": "npm install",
-  "containerEnv": { "NODE_ENV": "development" },
-  "forwardPorts": [3000, 5173]
-}
-```
-
-`postCreateCommand` runs once per file version. Modify + commit → re-executed on the next session.
-
----
-
-## Services
-
-| Service | Image | Role |
-|---------|-------|------|
-| `ollama` | `ollama/ollama:latest` | GPU (RTX 2080 Ti + GTX 1660) |
-| `ollama-cpu` | `ollama/ollama:latest` | CPU orchestration |
-| `ollama-init` | `cdw-ollama-init:latest` | Model download (ephemeral) |
-| `openclaw-agent` | `cdw-agent:latest` | Scheduler + orchestrator + webhooks |
-| `openclaw-chat` | `cdw-chat:latest` | Chat interface + commands |
-| `devcontainer` | `cdw-devcontainer:latest` | Code Server sessions (dynamically spawned) |
-| `devdocs` | `freecodecamp/devdocs` | Offline documentation |
-| `searxng` | `cdw-searxng:latest` | Local search engine |
-| `browserless` | `cdw-browserless:latest` | Headless browser |
-| `mcp-docs` | `cdw-mcp-docs:latest` | MCP documentation server |
-| `cdw-squid` | `cdw-squid:latest` | Agent outbound proxy |
+- [ ] Wildcard DNS `*.DEV_DOMAIN` → server IP
+- [ ] Coolify configured for wildcard TLS
+- [ ] `.env` filled
+- [ ] `docker compose up -d`
+- [ ] Models downloaded (`ollama-init`)
+- [ ] Forgejo webhook → `http://openclaw-agent:9000/webhook`
+- [ ] Branch protection on `main` (1 required approval)
+- [ ] `.coderclaw/rules.yaml` in each target repo
 
 ---
 
@@ -274,8 +255,8 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CHAT_DOMAIN` | — | openclaw-chat domain |
-| `DEV_DOMAIN` | — | Wildcard domain for dev sessions (`*.DEV_DOMAIN`) |
+| `CHAT_DOMAIN` | — | Chat domain |
+| `DEV_DOMAIN` | — | Wildcard domain for dev sessions |
 | `OPENCLAW_GATEWAY_PASSWORD` | — | Chat password |
 | `GIT_PROVIDER_1` | `forgejo` | Provider 1 type |
 | `GIT_PROVIDER_1_URL` | — | Forgejo URL |
@@ -289,31 +270,9 @@ Add `.devcontainer/devcontainer.json` to the repo to customize the environment:
 | `MODEL_LIGHT` | `qwen3.5:4b` | Score 10–30 |
 | `MODEL_TRIVIAL` | `qwen3.5:2b` | Score < 10 |
 | `MODEL_CPU` | `qwen3.5:0.8b` | CPU orchestration |
-| `MODEL_<ROLE>` | — | Per-role override (e.g. `MODEL_SECURITY=qwen3.5:27b-q3_k_m`) |
-| `MODEL_WRITING` | `mistral:7b` | Default model for writing roles (doc, marketing, design, product, bizdev) |
-| `DEVCONTAINER_IMAGE` | `cdw-devcontainer:latest` | Dev session image |
-| `DEVCONTAINER_MEMORY` | `4g` | RAM per session |
-| `DEVCONTAINER_CPUS` | `2.0` | CPUs per session |
-| `DEV_IDLE_MS` | `1800000` | Idle timeout (30min) |
-| `DEV_NETWORK` | `coolify` | Docker network shared with Coolify |
+| `MODEL_<ROLE>` | — | Per-role override |
 | `GATE_MAX_RETRIES` | `3` | Retries before human escalation |
-| `LOOP_DETECT_THRESHOLD` | `2` | Repeated hash → loop detected |
-| `UPGRADE_THRESHOLD` | `30` | Score delta before upgrade suggestion |
-| `DOWNGRADE_STREAK_MAX` | `3` | Consecutive low messages before downgrade |
-
----
-
-## Deployment checklist
-
-- [ ] Wildcard DNS `*.DEV_DOMAIN` → server IP
-- [ ] Coolify configured for wildcard TLS
-- [ ] `.env` filled from `.env.example`
-- [ ] `docker compose up -d`
-- [ ] `docker compose logs ollama-init` → models downloaded
-- [ ] DevDocs: downloads automatically when agents search for missing documentation
-- [ ] Forgejo webhook → `http://openclaw-agent:9000/webhook`
-- [ ] Branch protection on `main` (Required approvals: 1)
-- [ ] `.coderclaw/rules.yaml` in each target repo
+| `KEEPALIVE_MAX` | `2` | Idle models kept in VRAM |
 
 ---
 
@@ -429,8 +388,6 @@ specialists:
     triggers: [pricing, subscription, go-to-market, partnership]
 ```
 
-Only listed gates run. Specialists not in `gates` are available for routing but won't block the pipeline.
-
 ---
 
 ## IDE compatibility
@@ -442,3 +399,27 @@ Only listed gates run. Specialists not in `gates` are available for routing but 
 | Cursor | `/ssh-key` configured | Remote-SSH |
 | Windsurf | `/ssh-key` configured | Remote-SSH |
 | JetBrains Gateway | `/ssh-key` configured | Native SSH |
+
+---
+
+## Tech stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | TypeScript (strict, ES2024, ESM) |
+| Runtime | Node.js 24 LTS |
+| Build | tsc (TypeScript 6) |
+| Containers | Docker rootless, Alpine |
+| LLM | Ollama (local GPU) |
+| Agent framework | OpenClaw |
+| Git providers | Forgejo + GitHub App |
+| Reverse proxy | Coolify (Traefik) |
+| Documentation | DevDocs + mcp-docs |
+| Web search | SearXNG + nodriver |
+| CI/CD | GitHub Actions (per-container hash-based rebuild) |
+
+---
+
+## License
+
+ISC

@@ -42,8 +42,8 @@ RUN cd /build && npm ci \
  && cp -r /build/dist/services/chat/opt/* /opt/
 
 # Copy non-TS assets (SKILL.md, defaults, etc.)
-COPY shared/opt /
-COPY services/chat/opt /
+COPY shared /
+COPY services/chat /
 
 # Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \
