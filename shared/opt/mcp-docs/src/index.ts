@@ -465,11 +465,17 @@ const isDocInstalled = async (slug: string): Promise<boolean> => {
   } catch { return false; }
 };
 
-const triggerDocDownload = (slug: string): void => {
+const triggerDocDownload = async (slug: string): Promise<void> => {
   process.stderr.write(`[devdocs-install] ${slug}\n`);
   try {
-    httpGet(`${DEVDOCS_URL}/docs/${slug}/download`, res => { res.resume(); })
-      .on('error', () => { /* silent */ });
+    await new Promise<number>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), 10000);
+      httpGet(`${DEVDOCS_URL}/docs/${slug}/download`, res => {
+        clearTimeout(t);
+        res.resume();
+        resolve(res.statusCode!);
+      }).on('error', e => { clearTimeout(t); reject(e); });
+    });
     process.stderr.write(`[mcp-docs] triggered download for ${slug} via DevDocs endpoint\n`);
   } catch (e) {
     process.stderr.write(`[mcp-docs] DevDocs download endpoint unavailable for ${slug}: ${(e as Error).message}\n`);

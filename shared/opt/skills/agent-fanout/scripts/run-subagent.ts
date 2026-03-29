@@ -234,7 +234,7 @@ When everything is committed, type "COMMITS_DONE" and I will create the PR.`
       conversationHistory.push({ role: 'assistant', content: reply });
       log(`Response iteration ${iterations}: ${reply.slice(0, 200)}...`);
 
-      if (reply.includes('COMMITS_DONE') || reply.includes('done')) {
+      if (reply.includes('COMMITS_DONE') || reply.includes('terminé') || reply.includes('done')) {
         done = true;
         summary = reply;
         log('Agent signals end of commits');

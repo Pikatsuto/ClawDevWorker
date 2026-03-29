@@ -394,7 +394,7 @@ const startPipeline = async (repo: string, issueId: number, opts: { role?: strin
     const routed = await routeIssue(repo, issueId, issue, rules);
     if (routed === null) {
       await providerInfo.provider.addComment(repo, issueId,
-        `I couldn't determine which specialists are needed for this issue.\n\n` +
+        `🤔 I couldn't determine which specialists are needed for this issue.\n\n` +
         `Available gates: ${(rules?.gates ?? SPECIALISTS).map(g => `\`${g}\``).join(', ')}\n\n` +
         `Please add a label like \`gate:fullstack\` or \`gate:security\` to specify, then reassign me.`
       ).catch(() => { /* silent */ });
@@ -439,7 +439,7 @@ const startPipeline = async (repo: string, issueId: number, opts: { role?: strin
   audit('pipeline_start', { repo, issueId, gates, branch });
 
   await providerInfo.provider.addComment(repo, issueId,
-    `Pipeline started\n\nBranch: \`${branch}\`\nGates: ${gates.map(g => `\`${g}\``).join(' -> ')}`
+    `🚀 Pipeline started\n\nBranch: \`${branch}\`\nGates: ${gates.map(g => `\`${g}\``).join(' → ')}`
   ).catch(() => { /* silent */ });
 
   await runNextGate(repo, issueId);
@@ -535,7 +535,7 @@ const handleGateFail = async (repo: string, issueId: number | string, role: stri
     const providerInfo = getProvider(repo);
     if (providerInfo) {
       await providerInfo.provider.addComment(repo, Number(issueId),
-        `Gate \`${role}\` failed after ${retries} attempts.\n\nReason: ${reason?.slice(0, 500) ?? 'unknown'}\n\nUse \`/retry\` to restart or resolve manually.`
+        `⚠️ Gate \`${role}\` failed after ${retries} attempts.\n\nReason: ${reason?.slice(0, 500) ?? 'unknown'}\n\nUse \`/retry\` to restart or resolve manually.`
       ).catch(() => { /* silent */ });
       await providerInfo.provider.setLabel(repo, Number(issueId), 'needs-human').catch(() => { /* silent */ });
     }
@@ -680,7 +680,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           setPipeline(event.repo as string, event.issueId as number, { ...pipeline, stopped: true, status: 'stopped' });
           log(`Pipeline stopped: ${event.repo}#${event.issueId}`);
           if (webhookProvider) webhookProvider.addComment(event.repo as string, event.issueId as number,
-            'Pipeline stopped. Comment when ready to resume.').catch(() => { /* silent */ });
+            '⏸️ Pipeline stopped. Comment when ready to resume.').catch(() => { /* silent */ });
         }
       } else if (commentText === '/retry') {
         if (webhookProvider) webhookProvider.removeLabel(event.repo as string, event.issueId as number, 'needs-human').catch(() => { /* silent */ });

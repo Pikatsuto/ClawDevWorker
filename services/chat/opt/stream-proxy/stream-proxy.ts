@@ -246,6 +246,7 @@ const handleFanout = async ({ subtasksSpec, reqBody, schedulerSlots, clientRes }
 
 // ── Local session state ─────────────────────────────────────────────────────
 
+const pendingGpuWait = new Map<string, unknown>();
 let localSessionId: string | null = null;
 let sessionIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -298,7 +299,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
   if (req.method === 'GET' && urlPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, surface: SURFACE, sessionId: localSessionId }));
+    res.end(JSON.stringify({ ok: true, surface: SURFACE, sessionId: localSessionId, pendingGpuWait: pendingGpuWait.size }));
     return;
   }
 
@@ -343,7 +344,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method !== 'POST' || urlPath !== '/api/chat') {
     const body = await readBody(req);
     const payload = body ? JSON.stringify(body) : null;
-    const gpuUrl = process.env.OLLAMA_GPU_URL ?? 'http://ollama:11434';
+    const status = await schedulerReq('GET', '/status');
+    const gpuUrl = (status?.totalFree !== undefined)
+      ? (process.env.OLLAMA_GPU_URL ?? 'http://ollama:11434')
+      : 'http://ollama:11434';
     const target = new URL(urlPath, gpuUrl);
     const opts = {
       method: req.method!, hostname: target.hostname, port: target.port ? parseInt(target.port) : 11434, path: target.pathname,

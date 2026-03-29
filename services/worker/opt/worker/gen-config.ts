@@ -169,7 +169,7 @@ const systemPrompt = `${specialistPrompt}\n\n${baseContext}`;
 const getAllowedTools = (r: string): string[] => {
   const readTools = ['file.read', 'terminal', 'git', 'mcp-docs'];
   const writeTools = ['file.write'];
-  const devTools = [...readTools, ...writeTools];
+  const devTools = [...readTools, ...writeTools, 'docker-exec'];
   const reviewTools = [...readTools];
 
   const toolMap: Record<string, string[]> = {

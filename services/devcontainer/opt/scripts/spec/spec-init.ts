@@ -207,6 +207,9 @@ const push = async (ownerRepo: string) => {
   const [owner, repoName] = ownerRepo.split('/');
   if (!owner || !repoName) fail('Expected format: owner/repo');
 
+  // Validate user token exists (throws if not configured)
+  loadUserToken();
+
   const ctxFile = join(process.env.HOME ?? '/root', '.openclaw', 'spec-context.json');
   let providerType = 'forgejo';
   if (existsSync(ctxFile)) {

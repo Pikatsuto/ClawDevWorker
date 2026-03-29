@@ -186,7 +186,7 @@ export default {
         const lines: string[] = [];
         if (result.stdout) lines.push(`**stdout:**\n\`\`\`\n${result.stdout}\n\`\`\``);
         if (result.stderr) lines.push(`**stderr:**\n\`\`\`\n${result.stderr}\n\`\`\``);
-        lines.push(`**exit code:** ${result.exit_code} ${result.success ? 'OK' : 'FAIL'}`);
+        lines.push(`**exit code:** ${result.exit_code} ${result.success ? '✅' : '❌'}`);
         lines.push(`**image:** ${result.image ?? image}`);
         return lines.join('\n\n');
       },

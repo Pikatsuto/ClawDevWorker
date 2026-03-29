@@ -75,7 +75,7 @@ export const detectProvider = (req: IncomingMessage, providers: Map<string, GitP
       if (p.type === 'github') return { id, provider: p };
     }
   }
-  if (req.headers['x-gitea-event'] ?? req.headers['x-forgejo-event']) {
+  if (req.headers['x-gitea-event'] || req.headers['x-forgejo-event']) {
     for (const [id, p] of providers) {
       if (p.type === 'forgejo') return { id, provider: p };
     }

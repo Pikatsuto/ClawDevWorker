@@ -213,7 +213,7 @@ const state = {
   activeSlots: new Map<string, ActiveSlot>(),
   colocGroups: new Map<string, ColocGroup>(),
   queue: [] as QueueTask[],
-  pausedTasks: new Map<string, ActiveSlot & { pausedAt: number }>(),
+  pausedTasks: new Map<string, ActiveSlot & { slotId: string; pausedAt: number }>(),
   sessionModels: new Map<string, SessionModel>(),
 };
 
@@ -752,8 +752,8 @@ const pauseAgentsIfNeeded = async () => {
   log('Insufficient VRAM for cohabitation -> HUMAN_EXCLUSIVE', 'WARN');
   state.mode = 'HUMAN_EXCLUSIVE';
 
-  for (const [, slot] of state.activeSlots) {
-    state.pausedTasks.set(slot.taskId, { ...slot, pausedAt: Date.now() });
+  for (const [slotId, slot] of state.activeSlots) {
+    state.pausedTasks.set(slot.taskId, { slotId, ...slot, pausedAt: Date.now() });
     notify(ORCHESTRATOR_URL, 'pause', { taskId: slot.taskId });
   }
   state.activeSlots.clear();
