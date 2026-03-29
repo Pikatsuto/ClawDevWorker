@@ -30,8 +30,22 @@ RUN npm install -g openclaw 2>/dev/null || ( \
         && npm link \
     )
 
-COPY shared services/chat \
-     /
+# Copy sources + project root config for tsc
+COPY tsconfig.json package.json package-lock.json /build/
+COPY shared /build/shared
+COPY services/chat /build/services/chat
+
+# Install dev deps (typescript) + compile
+RUN cd /build && npm ci \
+ && npx tsc \
+ && cp -r /build/dist/shared/opt/* /opt/ \
+ && cp -r /build/dist/services/chat/opt/* /opt/
+
+# Copy non-TS assets (SKILL.md, defaults, etc.)
+COPY shared/opt /
+COPY services/chat/opt /
+
+# Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && npm install -g better-sqlite3 \
     && chmod -R a+rX /opt/

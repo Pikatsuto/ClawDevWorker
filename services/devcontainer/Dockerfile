@@ -52,8 +52,22 @@ COPY --from=openclaw-base /opt/openclaw /opt/openclaw
 COPY --from=openclaw-base /usr/local/bin/openclaw /usr/local/bin/openclaw
 COPY --from=openclaw-base /app/scripts /opt/openclaw-scripts/
 
-COPY shared services/devcontainer \
-     /
+# Copy sources + project root config for tsc
+COPY tsconfig.json package.json package-lock.json /build/
+COPY shared /build/shared
+COPY services/devcontainer /build/services/devcontainer
+
+# Install dev deps (typescript) + compile
+RUN cd /build && npm ci \
+ && npx tsc \
+ && cp -r /build/dist/shared/opt/* /opt/ \
+ && cp -r /build/dist/services/devcontainer/opt/* /opt/
+
+# Copy non-TS assets (SKILL.md, config, etc.)
+COPY shared/opt /
+COPY services/devcontainer/opt /
+
+# Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && npm install -g better-sqlite3 \
     && chmod -R a+rX /opt/

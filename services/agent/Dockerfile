@@ -38,8 +38,22 @@ RUN npm install -g openclaw 2>/dev/null || ( \
         && npm link \
     )
 
-COPY shared services/agent \
-     /
+# Copy sources + project root config for tsc
+COPY tsconfig.json package.json package-lock.json /build/
+COPY shared /build/shared
+COPY services/agent /build/services/agent
+
+# Install dev deps (typescript) + compile
+RUN cd /build && npm ci \
+ && npx tsc \
+ && cp -r /build/dist/shared/opt/* /opt/ \
+ && cp -r /build/dist/services/agent/opt/* /opt/
+
+# Copy non-TS assets (SKILL.md, workflows, specialists .md, etc.)
+COPY shared/opt /
+COPY services/agent/opt /
+
+# Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \
  && cd /opt/gpu-scheduler && npm install --omit=dev 2>/dev/null || true \
  && chmod -R a+rX /opt/

@@ -31,8 +31,22 @@ RUN git config --global user.email "agent@clawforge.local" \
     && git config --global pull.rebase false \
     && git config --global push.autoSetupRemote true
 
-COPY shared services/worker \
-     /
+# Copy sources + project root config for tsc
+COPY tsconfig.json package.json package-lock.json /build/
+COPY shared /build/shared
+COPY services/worker /build/services/worker
+
+# Install dev deps (typescript) + compile
+RUN cd /build && npm ci \
+ && npx tsc \
+ && cp -r /build/dist/shared/opt/* /opt/ \
+ && cp -r /build/dist/services/worker/opt/* /opt/
+
+# Copy non-TS assets (SKILL.md, etc.)
+COPY shared/opt /
+COPY services/worker/opt /
+
+# Install runtime npm deps
 RUN cd /opt/mcp-docs && npm install --omit=dev \
     && chmod -R a+rX /opt/
 
