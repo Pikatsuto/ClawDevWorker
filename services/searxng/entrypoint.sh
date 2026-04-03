@@ -10,4 +10,4 @@ if [ ! -f "${CONFIG_DIR}/settings.yml" ]; then
     cp "${DEFAULT_DIR}/settings.yml" "${CONFIG_DIR}/settings.yml"
 fi
 
-exec "$@"
+exec /usr/local/searxng/entrypoint.sh
