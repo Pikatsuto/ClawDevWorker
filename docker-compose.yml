@@ -74,7 +74,7 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -97,7 +97,7 @@ services:
       - OLLAMA_NUM_PARALLEL=2     # Max 2 simultaneous requests (analysis + buffer)
       - OLLAMA_KEEP_ALIVE=5m      # Unload model after 5min idle
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
