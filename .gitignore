@@ -1,3 +1,6 @@
 node_modules/
 dist/
 *.js.map
+.env
+.claude/
+REFACTOR-PLAN.md
