@@ -107,14 +107,9 @@ engines:
     shortcut: pip
     disabled: false
 
-  - name: crates.io
-    engine: crates.io
-    shortcut: crates
-    disabled: false
-
   - name: pkg.go.dev
     engine: pkg_go_dev
-    shortcut: go
+    shortcut: godev
     disabled: false
 
   - name: docker hub

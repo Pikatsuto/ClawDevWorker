@@ -12,7 +12,7 @@
 
 networks:
   coolify:
-    external: true
+    driver: bridge
 
   frontend:
     driver: bridge
@@ -22,7 +22,7 @@ networks:
     internal: true
 
   forgejo-net:
-    external: true
+    driver: bridge
 
   docs-net:
     driver: bridge
@@ -55,9 +55,9 @@ volumes:
 
 services:
 
-  # ── Ollama — NVIDIA (RTX 2080 Ti + GTX 1660 = 17 GB VRAM) ──────────────────
+  # ── Ollama — ROCm (AMD GPU) ─────────────────────────────────────────────────
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:rocm
     container_name: ollama
     restart: unless-stopped
     networks:
@@ -66,13 +66,12 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - "39"
+      - "105"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
@@ -112,7 +111,9 @@ services:
   # On stack restart, ollama-init returns 0 immediately since models
   # are already present (checked via /api/tags before pull).
   ollama-init:
-    image: ghcr.io/pikatsuto/cdw-ollama-init:latest
+    build:
+      context: .
+      dockerfile: services/ollama-init/Dockerfile
     container_name: ollama-init
     restart: "no"
     networks:
@@ -168,7 +169,9 @@ services:
 
   # ── SearXNG ──────────────────────────────────────────────────────────────────
   searxng:
-    image: ghcr.io/pikatsuto/cdw-searxng:latest
+    build:
+      context: .
+      dockerfile: services/searxng/Dockerfile
     container_name: searxng
     restart: unless-stopped
     networks:
@@ -189,7 +192,9 @@ services:
 
   # ── Browserless ──────────────────────────────────────────────────────────────
   browserless:
-    image: ghcr.io/pikatsuto/cdw-browserless:latest
+    build:
+      context: .
+      dockerfile: services/browserless/Dockerfile
     container_name: browserless
     restart: unless-stopped
     networks:
@@ -209,7 +214,9 @@ services:
 
   # ── MCP Docs ─────────────────────────────────────────────────────────────────
   mcp-docs:
-    image: ghcr.io/pikatsuto/cdw-mcp-docs:latest
+    build:
+      context: .
+      dockerfile: services/mcp-docs/Dockerfile
     container_name: mcp-docs
     restart: unless-stopped
     networks:
@@ -241,7 +248,9 @@ services:
   # Hot unblock:
   #   docker exec agent-squid sh -c "echo '.domain.com' >> /etc/squid/whitelist/whitelist.conf && squid -k reconfigure"
   squid:
-    image: ghcr.io/pikatsuto/cdw-squid:latest
+    build:
+      context: .
+      dockerfile: services/squid/Dockerfile
     container_name: cdw-squid
     restart: unless-stopped
     networks:
@@ -264,7 +273,9 @@ services:
   # No exposed UI. Configure the webhook in Forgejo:
   #   Repo → Settings → Webhooks → http://openclaw-agent:9000/webhook
   openclaw-agent:
-    image: ghcr.io/pikatsuto/cdw-agent:latest
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
     container_name: openclaw-agent
     restart: unless-stopped
     privileged: true
@@ -344,7 +355,9 @@ services:
 
   # ── openclaw-chat ─────────────────────────────────────────────────────────────
   openclaw-chat:
-    image: ghcr.io/pikatsuto/cdw-chat:latest
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile
     container_name: openclaw-chat
     restart: unless-stopped
     privileged: true
