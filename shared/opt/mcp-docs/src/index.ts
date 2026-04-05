@@ -581,6 +581,6 @@ process.stdin.on('data', (chunk: string) => {
 process.stdin.on('end', () => {
   process.stderr.write('[mcp-docs] stdin closed — staying alive for container healthcheck\n');
 });
-process.stdin.resume();
+setInterval(() => {}, 1 << 30); // prevent event loop from exiting
 
 process.stderr.write('[mcp-docs] v2.0.0 started\n');
