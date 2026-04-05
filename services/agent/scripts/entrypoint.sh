@@ -42,10 +42,20 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
 
-dockerd-entrypoint.sh --experimental --storage-driver=overlay2 \
-    --iptables=false --ip6tables=false \
+DOCKER_SOCK="/run/user/$(id -u)/docker.sock"
+rootlesskit \
+    --net=slirp4netns \
+    --copy-up=/etc \
+    --copy-up=/run \
+    --propagation=rslave \
+    dockerd \
+        --host="unix://$DOCKER_SOCK" \
+        --experimental \
+        --storage-driver=overlay2 \
+        --iptables=false --ip6tables=false \
     > /tmp/dockerd-rootless.log 2>&1 &
 DOCKERD_PID=$!
+export DOCKER_HOST="unix://$DOCKER_SOCK"
 
 log "Waiting for Docker socket..."
 for i in $(seq 1 30); do
