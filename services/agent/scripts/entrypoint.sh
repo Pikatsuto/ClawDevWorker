@@ -42,7 +42,7 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
 
-dockerd-rootless.sh --experimental --storage-driver=overlay2 \
+dockerd-entrypoint.sh --experimental --storage-driver=overlay2 \
     --iptables=false --ip6tables=false \
     > /tmp/dockerd-rootless.log 2>&1 &
 DOCKERD_PID=$!
