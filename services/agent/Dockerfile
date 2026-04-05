@@ -69,7 +69,7 @@ ENV OLLAMA_BASE_URL=http://ollama:11434 \
     EPHEMERAL_CPUS=1.0 \
     EPHEMERAL_TIMEOUT=300
 
-COPY --from=build /opt /
+COPY --from=build /opt/ /opt/
 COPY --from=build /usr/local/lib/node_modules /usr/local/lib/
 COPY --chmod=755 services/agent/scripts/entrypoint.sh /usr/local/bin/entrypoint
 

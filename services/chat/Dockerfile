@@ -63,7 +63,7 @@ ENV OPENCLAW_GATEWAY_PORT=18791 \
     EPHEMERAL_CPUS=0.5 \
     EPHEMERAL_TIMEOUT=60
 
-COPY --from=build /opt /
+COPY --from=build /opt/ /opt/
 COPY --from=build /usr/local/lib/node_modules /usr/local/lib/
 COPY --chmod=755 services/chat/scripts/entrypoint.sh /usr/local/bin/entrypoint
 

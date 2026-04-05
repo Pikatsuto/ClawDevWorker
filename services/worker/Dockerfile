@@ -53,7 +53,7 @@ RUN cd /opt/mcp-docs && npm install --omit=dev \
 # ── final: clean image ─────────────────────────────────────────────────────
 FROM base
 
-COPY --from=build /opt /
+COPY --from=build /opt/ /opt/
 COPY --from=build /usr/local/lib/node_modules /usr/local/lib/
 COPY --from=build /root/.gitconfig /root/.gitconfig
 COPY --chmod=755 services/worker/scripts/entrypoint.sh /usr/local/bin/entrypoint

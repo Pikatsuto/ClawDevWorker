@@ -84,7 +84,7 @@ RUN CS_VERSION=$(curl -fsSL "https://api.github.com/repos/coder/code-server/rele
 # ── final: clean image ─────────────────────────────────────────────────────
 FROM base
 
-COPY --from=build /opt /
+COPY --from=build /opt/ /opt/
 COPY --from=codeserver /opt/code-server /opt/
 RUN ln -s /opt/code-server/bin/code-server /usr/local/bin/code-server
 
