@@ -105,8 +105,7 @@ try {
   const domains = lines.filter(l => l && !l.startsWith('#')).length;
   console.log('whitelist.conf written (' + domains + ' domains) → ' + file);
 } catch (e) {
-  console.error('ERROR writing whitelist:', e.message);
-  process.exit(1);
+  console.error('ERROR writing whitelist:', e.message, '(non-blocking — squid will use its default config)');
 }
 NODESCRIPT
 
