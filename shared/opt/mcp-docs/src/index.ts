@@ -577,4 +577,10 @@ process.stdin.on('data', (chunk: string) => {
   for (const l of lines) if (l.trim()) handle(l.trim());
 });
 
+// Keep the process alive even when stdin closes (container without tty)
+process.stdin.on('end', () => {
+  process.stderr.write('[mcp-docs] stdin closed — staying alive for container healthcheck\n');
+});
+process.stdin.resume();
+
 process.stderr.write('[mcp-docs] v2.0.0 started\n');
