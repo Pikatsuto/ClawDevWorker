@@ -1,11 +1,17 @@
+FROM node:24-alpine AS build
+
+WORKDIR /build
+COPY tsconfig.json package.json package-lock.json ./
+COPY shared/opt/mcp-docs/ shared/opt/mcp-docs/
+RUN npm ci && npx tsc
+
 FROM node:24-alpine
 
 WORKDIR /app
-
 COPY shared/opt/mcp-docs/package.json .
 RUN npm install --omit=dev 2>/dev/null || true
 
-COPY shared/opt/mcp-docs/src/ src/
+COPY --from=build /build/dist/shared/opt/mcp-docs/src/ src/
 COPY shared/opt/mcp-docs/scripts/ scripts/
 
 ENV NODE_ENV=production
