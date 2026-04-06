@@ -1,6 +1,6 @@
 ---
 name: git-config
-description: "Configure the git identity (author name and email) used by the agent for commits. Can be set globally (all projects) or per-project. The agent NEVER commits under a brand name — the identity is controlled by the user."
+description: "Configure the git identity (author name and email) used for commits. Separate identities for agent (autonomous worker/chat) and user (devcontainer). Can be set globally or per-project."
 metadata: {"openclaw":{"emoji":"🔧"}}
 user-invocable: true
 always: false
@@ -11,102 +11,128 @@ requires:
 
 **Language**: Always respond in the user's language. Adapt all output, explanations and messages to match the language the user is communicating in.
 
-# git-config — Agent git identity
+# git-config — Git identity management
+
+Two separate identities:
+- **agent** — used by autonomous workers and chat when committing on behalf of the pipeline
+- **user** — used in devcontainer sessions when the human is coding interactively
 
 ## Commands
 
 | Command | Action |
 |---------|--------|
-| `/git-config set <name> <email>` | Set git identity globally (all projects) |
-| `/git-config set <name> <email> --project` | Set git identity for the current project only |
-| `/git-config show` | Show current git identity (global + project override if any) |
-| `/git-config clear` | Remove global identity (fallback to AGENT_GIT_LOGIN) |
-| `/git-config clear --project` | Remove project override (fallback to global) |
+| `/git-config set agent <name> <email>` | Set agent identity globally |
+| `/git-config set user <name> <email>` | Set user identity globally |
+| `/git-config set agent <name> <email> --project` | Set agent identity for the current project |
+| `/git-config set user <name> <email> --project` | Set user identity for the current project |
+| `/git-config show` | Show all identities (agent + user, global + project) |
+| `/git-config clear agent` | Remove agent global identity |
+| `/git-config clear user` | Remove user global identity |
+| `/git-config clear agent --project` | Remove agent project override |
+| `/git-config clear user --project` | Remove user project override |
 
 ## Resolution order
 
-When the agent commits, the git identity is resolved in this order:
+Each surface resolves its own identity independently:
 
-1. **Project-level** (`$PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw/git-config.json`) — highest priority
-2. **Global** (`$PROJECT_DATA_DIR/.coderclaw/git-config.json`)
-3. **Fallback** — `AGENT_GIT_LOGIN` env var as name, `${AGENT_GIT_LOGIN}@localhost` as email
+**Worker / Chat (surface = agent):**
+1. Project-level agent config
+2. Global agent config
+3. Fallback: `AGENT_GIT_LOGIN` / `${AGENT_GIT_LOGIN}@localhost`
 
-## /git-config set Procedure
+**Devcontainer (surface = user):**
+1. Project-level user config
+2. Global user config
+3. Fallback: `USER_ID` / `${USER_ID}@localhost`
 
-### Global
+## Storage format
 
-```bash
-CONFIG_DIR="${PROJECT_DATA_DIR}/.coderclaw"
-CONFIG_FILE="${CONFIG_DIR}/git-config.json"
-mkdir -p "$CONFIG_DIR"
-```
-
-Write:
 ```json
 {
-  "name": "<name>",
-  "email": "<email>",
-  "updatedAt": "<ISO date>"
+  "agent": {
+    "name": "cdw-agent",
+    "email": "agent@git.example.com",
+    "updatedAt": "2026-04-06T..."
+  },
+  "user": {
+    "name": "Gabriel Guillou",
+    "email": "gabriel@example.com",
+    "updatedAt": "2026-04-06T..."
+  }
 }
 ```
 
-### Per-project (with --project flag)
+## Storage locations
+
+| Scope | Path |
+|-------|------|
+| Global | `$PROJECT_DATA_DIR/.coderclaw/git-config.json` |
+| Per-project | `$PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw/git-config.json` |
+
+Both are on the `project_data` volume — shared across all containers.
+
+## /git-config set Procedure
+
+1. Parse the surface (`agent` or `user`), name, and email from the command
+2. Determine the config path (global or `--project`)
+3. Read existing config (or create empty `{}`)
+4. Update the surface key:
 
 ```bash
-CONFIG_DIR="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw"
+CONFIG_DIR="${PROJECT_DATA_DIR}/.coderclaw"  # or $PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw for --project
 CONFIG_FILE="${CONFIG_DIR}/git-config.json"
 mkdir -p "$CONFIG_DIR"
 ```
 
-Same JSON format.
+```javascript
+const config = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+config[surface] = { name, email, updatedAt: new Date().toISOString() };
+fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
+```
+
+5. Confirm: "Git identity for **[surface]** set to **[name]** <**[email]**>"
 
 ## /git-config show Procedure
 
-1. Read project-level config if exists
-2. Read global config if exists
-3. Display:
+Display all configured identities:
 
 ```
-Git identity:
-  Global:  <name> <<email>>
-  Project: <name> <<email>> (overrides global)
-  Active:  <name> <<email>>
+Git identities:
+
+  Agent (workers + chat):
+    Global:  cdw-agent <agent@git.example.com>
+    Project: (none — using global)
+    Active:  cdw-agent <agent@git.example.com>
+
+  User (devcontainer):
+    Global:  Gabriel Guillou <gabriel@example.com>
+    Project: (none — using global)
+    Active:  Gabriel Guillou <gabriel@example.com>
 ```
 
-If no config exists:
-```
-Git identity:
-  No custom identity configured.
-  Using fallback: agent <agent@localhost>
-  Set one with: /git-config set "Your Name" "email@example.com"
-```
+## How each container reads the config
 
-## How workers use this config
-
-At startup, the worker entrypoint reads the config and applies it:
+### Worker entrypoint (surface = agent)
 
 ```bash
-# Read git identity from project_data (project-level > global > fallback)
-GIT_NAME="${AGENT_GIT_LOGIN:-agent}"
-GIT_EMAIL="${AGENT_GIT_LOGIN:-agent}@localhost"
+GIT_ID_NAME="${AGENT_GIT_LOGIN:-agent}"
+GIT_ID_EMAIL="${AGENT_GIT_LOGIN:-agent}@localhost"
+PROJECT_CFG="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw/git-config.json"
+GLOBAL_CFG="${PROJECT_DATA_DIR}/.coderclaw/git-config.json"
 
-PROJECT_CONFIG="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw/git-config.json"
-GLOBAL_CONFIG="${PROJECT_DATA_DIR}/.coderclaw/git-config.json"
-
-if [ -f "$PROJECT_CONFIG" ]; then
-  GIT_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_CONFIG','utf8')).name)")
-  GIT_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_CONFIG','utf8')).email)")
-elif [ -f "$GLOBAL_CONFIG" ]; then
-  GIT_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_CONFIG','utf8')).name)")
-  GIT_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_CONFIG','utf8')).email)")
+if [ -f "$PROJECT_CFG" ]; then
+  GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_CFG','utf8'));console.log(c.agent?.name||'$GIT_ID_NAME')")
+  GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_CFG','utf8'));console.log(c.agent?.email||'$GIT_ID_EMAIL')")
+elif [ -f "$GLOBAL_CFG" ]; then
+  GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_CFG','utf8'));console.log(c.agent?.name||'$GIT_ID_NAME')")
+  GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_CFG','utf8'));console.log(c.agent?.email||'$GIT_ID_EMAIL')")
 fi
 
-git config user.name "$GIT_NAME"
-git config user.email "$GIT_EMAIL"
+git config user.name "$GIT_ID_NAME"
+git config user.email "$GIT_ID_EMAIL"
 ```
 
-## Storage
+### Devcontainer entrypoint (surface = user)
 
-- Global: `$PROJECT_DATA_DIR/.coderclaw/git-config.json`
-- Per-project: `$PROJECT_DATA_DIR/$PROJECT_NAME/.coderclaw/git-config.json`
-- Shared across all containers via the `project_data` volume
+Same logic but reads `c.user?.name` and `c.user?.email` instead of `c.agent`.
+Fallback: `USER_ID` / `${USER_ID}@localhost`.

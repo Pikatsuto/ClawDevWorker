@@ -59,11 +59,11 @@ GIT_ID_EMAIL="${AGENT_GIT_LOGIN:-agent}@localhost"
 PROJECT_GIT_CFG="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw/git-config.json"
 GLOBAL_GIT_CFG="${PROJECT_DATA_DIR}/.coderclaw/git-config.json"
 if [ -f "$PROJECT_GIT_CFG" ]; then
-  GIT_ID_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8')).name)")
-  GIT_ID_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8')).email)")
+  GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8'));console.log(c.agent?.name||'$GIT_ID_NAME')")
+  GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8'));console.log(c.agent?.email||'$GIT_ID_EMAIL')")
 elif [ -f "$GLOBAL_GIT_CFG" ]; then
-  GIT_ID_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8')).name)")
-  GIT_ID_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8')).email)")
+  GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8'));console.log(c.agent?.name||'$GIT_ID_NAME')")
+  GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8'));console.log(c.agent?.email||'$GIT_ID_EMAIL')")
 fi
 git config user.email "$GIT_ID_EMAIL"
 git config user.name  "$GIT_ID_NAME"

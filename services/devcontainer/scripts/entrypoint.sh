@@ -139,6 +139,23 @@ if [ -n "$REPO" ]; then
     if [ -d "$REPO_DIR" ]; then
         export WORKSPACE="$REPO_DIR"
         export PROJECT_NAME="${REPO//\//_}"
+
+        # Git identity — surface=user (project > global > fallback)
+        GIT_ID_NAME="${USER_ID:-coder}"
+        GIT_ID_EMAIL="${USER_ID:-coder}@localhost"
+        PROJECT_GIT_CFG="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw/git-config.json"
+        GLOBAL_GIT_CFG="${PROJECT_DATA_DIR}/.coderclaw/git-config.json"
+        if [ -f "$PROJECT_GIT_CFG" ]; then
+          GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8'));console.log(c.user?.name||'$GIT_ID_NAME')")
+          GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8'));console.log(c.user?.email||'$GIT_ID_EMAIL')")
+        elif [ -f "$GLOBAL_GIT_CFG" ]; then
+          GIT_ID_NAME=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8'));console.log(c.user?.name||'$GIT_ID_NAME')")
+          GIT_ID_EMAIL=$(node -e "const c=JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8'));console.log(c.user?.email||'$GIT_ID_EMAIL')")
+        fi
+        git -C "$REPO_DIR" config user.name "$GIT_ID_NAME"
+        git -C "$REPO_DIR" config user.email "$GIT_ID_EMAIL"
+        log "Git identity (user): $GIT_ID_NAME <$GIT_ID_EMAIL>"
+
         node /opt/skills/codebase-analyze/incremental-index.js 2>/dev/null || true
         log "Codebase index updated"
     fi

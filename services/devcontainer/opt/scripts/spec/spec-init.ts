@@ -231,13 +231,13 @@ const push = async (ownerRepo: string) => {
   let gitName = AGENT_LOGIN;
   let gitEmail = `${AGENT_LOGIN}@localhost`;
   if (existsSync(projCfg)) {
-    const cfg = JSON.parse(readFileSync(projCfg, 'utf8')) as { name: string; email: string };
-    gitName = cfg.name;
-    gitEmail = cfg.email;
+    const cfg = JSON.parse(readFileSync(projCfg, 'utf8')) as { agent?: { name?: string; email?: string } };
+    if (cfg.agent?.name) gitName = cfg.agent.name;
+    if (cfg.agent?.email) gitEmail = cfg.agent.email;
   } else if (existsSync(globalCfg)) {
-    const cfg = JSON.parse(readFileSync(globalCfg, 'utf8')) as { name: string; email: string };
-    gitName = cfg.name;
-    gitEmail = cfg.email;
+    const cfg = JSON.parse(readFileSync(globalCfg, 'utf8')) as { agent?: { name?: string; email?: string } };
+    if (cfg.agent?.name) gitName = cfg.agent.name;
+    if (cfg.agent?.email) gitEmail = cfg.agent.email;
   }
   execSync(`git -C ${cloneDir} config user.email "${gitEmail}"`);
   execSync(`git -C ${cloneDir} config user.name "${gitName}"`);
