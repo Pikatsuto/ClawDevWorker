@@ -1,5 +1,5 @@
 # Extensions VSCode baked dans le volume user au premier démarrage
-# Identique à l'ancien kasm-openclaw
+# Installed into the user volume on first startup
 
 # OpenClaw / ACP
 xiaoyaner.openclaw-node-vscode

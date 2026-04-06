@@ -81,7 +81,9 @@ volumes:
   squid_cache:
   squid_logs:
   openclaw_agent_data:
+  openclaw_agent_docker:
   openclaw_chat_data:
+  openclaw_chat_docker:
   forgejo_db:
   forgejo_data:
   forgejo_dind:
@@ -449,7 +451,8 @@ services:
       - EPHEMERAL_TIMEOUT=${EPHEMERAL_TIMEOUT:-300}
       - WORKER_IMAGE=ghcr.io/pikatsuto/cdw-worker:latest
     volumes:
-      - openclaw_agent_data:/home/kasm-user/.openclaw
+      - openclaw_agent_data:/home/rootless/.openclaw
+      - openclaw_agent_docker:/home/rootless/.local/share/docker
       - squid_whitelist:/etc/squid/whitelist
       - project_data:/projects
     healthcheck:
@@ -518,7 +521,8 @@ services:
       - EPHEMERAL_TIMEOUT=${EPHEMERAL_TIMEOUT:-60}
       - HOST_DOCKER_SOCK=/var/run/host-docker.sock
     volumes:
-      - openclaw_chat_data:/home/kasm-user/.openclaw
+      - openclaw_chat_data:/home/rootless/.openclaw
+      - openclaw_chat_docker:/home/rootless/.local/share/docker
       - squid_whitelist:/etc/squid/whitelist
       - project_data:/projects
       - /var/run/docker.sock:/var/run/host-docker.sock:ro
