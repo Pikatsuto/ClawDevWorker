@@ -21,8 +21,9 @@ networks:
     driver: bridge
     internal: true
 
-  forgejo-net:
+  forgejo-internal:
     driver: bridge
+    internal: true
 
   docs-net:
     driver: bridge
@@ -52,8 +53,122 @@ volumes:
   squid_logs:
   openclaw_agent_data:
   openclaw_chat_data:
+  forgejo_db:
+  forgejo_data:
+  forgejo_dind:
+  forgejo_runner_data:
+  forgejo_runner_work:
 
 services:
+
+  # ── Forgejo — PostgreSQL ───────────────────────────────────────────────────
+  forgejo-db:
+    image: postgres:16-alpine
+    container_name: forgejo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: forgejo
+      POSTGRES_USER: forgejo
+      POSTGRES_PASSWORD: ${FORGEJO_DB_PASSWORD:-changeme}
+    volumes:
+      - forgejo_db:/var/lib/postgresql/data
+    networks:
+      - forgejo-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgejo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Forgejo — Git server ───────────────────────────────────────────────────
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:14
+    container_name: forgejo
+    restart: unless-stopped
+    depends_on:
+      forgejo-db:
+        condition: service_healthy
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: forgejo-db:5432
+      FORGEJO__database__NAME: forgejo
+      FORGEJO__database__USER: forgejo
+      FORGEJO__database__PASSWD: ${FORGEJO_DB_PASSWORD:-changeme}
+      FORGEJO__server__DOMAIN: ${GIT_DOMAIN:-git.localhost}
+      FORGEJO__server__ROOT_URL: https://${GIT_DOMAIN:-git.localhost}/
+      FORGEJO__server__SSH_DOMAIN: ${GIT_DOMAIN:-git.localhost}
+      FORGEJO__server__SSH_PORT: ${FORGEJO_SSH_PORT:-2222}
+      FORGEJO__server__HTTP_PORT: 3000
+      FORGEJO__service__DISABLE_REGISTRATION: "false"
+      FORGEJO__actions__ENABLED: "true"
+      FORGEJO__mailer__ENABLED: "false"
+      FORGEJO__security__SECRET_KEY: ${FORGEJO_SECRET_KEY:-dev-secret-key-change-in-prod}
+      FORGEJO__security__INTERNAL_TOKEN: ${FORGEJO_INTERNAL_TOKEN:-dev-internal-token-change-in-prod}
+    volumes:
+      - forgejo_data:/data
+    ports:
+      - "${FORGEJO_SSH_PORT:-2222}:22"
+      - "127.0.0.1:3000:3000"
+    networks:
+      - forgejo-internal
+      - coolify
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/v1/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Forgejo — Docker-in-Docker (Actions CI) ────────────────────────────────
+  forgejo-dind:
+    image: docker:27-dind
+    container_name: forgejo-dind
+    restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - forgejo_dind:/var/lib/docker
+      - forgejo_runner_work:/workspace
+    networks:
+      - forgejo-internal
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
+
+  # ── Forgejo — Runner (Actions executor) ────────────────────────────────────
+  forgejo-runner:
+    image: code.forgejo.org/forgejo/runner:12
+    container_name: forgejo-runner
+    restart: unless-stopped
+    depends_on:
+      - forgejo
+      - forgejo-dind
+    user: root
+    environment:
+      DOCKER_HOST: tcp://forgejo-dind:2375
+      FORGEJO_INSTANCE_URL: https://${GIT_DOMAIN:-git.localhost}
+      FORGEJO_RUNNER_TOKEN: ${FORGEJO_RUNNER_TOKEN:-}
+      FORGEJO_RUNNER_NAME: ${FORGEJO_RUNNER_NAME:-cdw-runner}
+      FORGEJO_RUNNER_LABELS: ${FORGEJO_RUNNER_LABELS:-debian-latest:docker://debian:trixie-slim,node-24:docker://node:24-bookworm,docker:docker://docker:27}
+    volumes:
+      - forgejo_runner_data:/data
+      - forgejo_runner_work:/workspace
+    networks:
+      - forgejo-internal
+      - coolify
+    command:
+      - sh
+      - -c
+      - |
+        forgejo-runner register \
+          --no-interactive \
+          --instance $$FORGEJO_INSTANCE_URL \
+          --token $$FORGEJO_RUNNER_TOKEN \
+          --name $$FORGEJO_RUNNER_NAME \
+          --labels $$FORGEJO_RUNNER_LABELS
+        forgejo-runner daemon
+
 
   # ── Ollama — ROCm (AMD GPU) ─────────────────────────────────────────────────
   ollama:
