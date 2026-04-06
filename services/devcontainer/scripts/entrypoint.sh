@@ -221,7 +221,7 @@ const systemPrompt = specialistPrompt
 const config = {
   gateway: {
     mode:  'local',
-    bind:  'localhost',
+    bind:  'loopback',
     port:  18789,
     token: '${GATEWAY_TOKEN}',
     nodes: { autoApprove: true },
@@ -317,10 +317,7 @@ log "openclaw.json generated"
 
 # ── 8. Start OpenClaw gateway ─────────────────────────────────────────────
 log "Starting OpenClaw gateway (port 18789)..."
-openclaw gateway \
-    --config "$OPENCLAW_CONFIG" \
-    --bind localhost \
-    --port 18789 &
+openclaw gateway start &
 OPENCLAW_PID=$!
 
 for i in $(seq 1 20); do

@@ -220,7 +220,7 @@ const getEnabledSkills = (r: string): string[] => {
 const config = {
   gateway: {
     mode: 'local',
-    bind: '127.0.0.1',
+    bind: 'loopback',
     port: 19000,
     auth: { mode: 'token', token: process.env.GATEWAY_TOKEN },
     nodes: { autoApprove: true },

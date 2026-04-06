@@ -256,7 +256,7 @@ When asked to continue work on an existing issue or branch:
 const config = {
   gateway: {
     mode: 'local',
-    bind: '0.0.0.0',
+    bind: 'lan',
     port: parseInt(process.env.WEBHOOK_PORT || '9000'),
     auth: { mode: 'token', token: process.env.GATEWAY_TOKEN },
     nodes: { autoApprove: false },
@@ -370,8 +370,5 @@ exec env \
     DOCKER_HOST="$DOCKER_HOST" \
     FORGEJO_TOKEN="$FORGEJO_TOKEN" \
     FORGEJO_URL="$FORGEJO_URL" \
-    openclaw gateway start \
-        --port "$WEBHOOK_PORT" \
-        --bind "0.0.0.0" \
-        --config "$CONFIG_FILE"
+    openclaw gateway start
 

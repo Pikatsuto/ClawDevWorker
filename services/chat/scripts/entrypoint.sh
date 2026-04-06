@@ -226,7 +226,7 @@ const systemPrompt = specialistPrompt
 const config = {
   gateway: {
     mode: 'local',
-    bind: '0.0.0.0',
+    bind: 'lan',
     port,
     auth: {
       mode: 'password',
@@ -390,7 +390,4 @@ exec env \
     HTTPS_PROXY="$SQUID_PROXY_URL" \
     NO_PROXY="localhost,127.0.0.1,host-gateway" \
     DOCKER_HOST="$DOCKER_HOST" \
-    openclaw gateway start \
-        --port "$GATEWAY_PORT" \
-        --bind "0.0.0.0" \
-        --config "$CONFIG_FILE"
+    openclaw gateway start
