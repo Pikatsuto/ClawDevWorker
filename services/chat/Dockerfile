@@ -17,18 +17,17 @@ RUN apk add --no-cache \
         curl wget git ca-certificates gnupg bash \
         python3 py3-pip py3-virtualenv \
         build-base jq htop openssh-client \
-        nodejs npm
-
-# ── build: install npm packages ────────────────────────────────────────────
-FROM base AS build
-
-RUN npm install -g openclaw 2>/dev/null || ( \
+        nodejs npm \
+ && npm install -g openclaw 2>/dev/null || ( \
         git clone --depth=1 https://github.com/openclaw/openclaw.git /opt/openclaw \
         && cd /opt/openclaw \
         && npm ci --omit=dev \
         && (npm run build 2>/dev/null || true) \
         && npm link \
     )
+
+# ── build: install npm packages ────────────────────────────────────────────
+FROM base AS build
 
 # Copy sources + project root config for tsc
 COPY tsconfig.json package.json package-lock.json /build/
@@ -64,7 +63,6 @@ ENV OPENCLAW_GATEWAY_PORT=18791 \
     EPHEMERAL_TIMEOUT=60
 
 COPY --from=build /opt/ /opt/
-COPY --from=build /usr/local/lib/node_modules /usr/local/lib/
 COPY --chmod=755 services/chat/scripts/entrypoint.sh /usr/local/bin/entrypoint
 
 USER rootless

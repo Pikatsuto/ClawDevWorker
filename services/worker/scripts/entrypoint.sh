@@ -53,8 +53,24 @@ AUTH_URL="${FORGEJO_URL}/${REPO}.git"
 AUTH_URL="${AUTH_URL/\/\//\/\/agent:${FORGEJO_TOKEN}@}"
 git clone --depth=50 "$AUTH_URL" "$WORKSPACE" || fail "Clone failed"
 cd "$WORKSPACE"
-git config user.email "agent@clawforge.local"
-git config user.name  "ClawForge Agent"
+# Git identity — read from /git-config set (project > global > fallback)
+GIT_ID_NAME="${AGENT_GIT_LOGIN:-agent}"
+GIT_ID_EMAIL="${AGENT_GIT_LOGIN:-agent}@localhost"
+PROJECT_GIT_CFG="${PROJECT_DATA_DIR}/${PROJECT_NAME}/.coderclaw/git-config.json"
+GLOBAL_GIT_CFG="${PROJECT_DATA_DIR}/.coderclaw/git-config.json"
+if [ -f "$PROJECT_GIT_CFG" ]; then
+  GIT_ID_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8')).name)")
+  GIT_ID_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PROJECT_GIT_CFG','utf8')).email)")
+elif [ -f "$GLOBAL_GIT_CFG" ]; then
+  GIT_ID_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8')).name)")
+  GIT_ID_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$GLOBAL_GIT_CFG','utf8')).email)")
+fi
+git config user.email "$GIT_ID_EMAIL"
+git config user.name  "$GIT_ID_NAME"
+git config init.defaultBranch main
+git config pull.rebase false
+git config push.autoSetupRemote true
+log "Git identity: $GIT_ID_NAME <$GIT_ID_EMAIL>"
 
 # ── 2. Fetch the issue ───────────────────────────────────────────────────
 log "Issue #${ISSUE_ID}..."

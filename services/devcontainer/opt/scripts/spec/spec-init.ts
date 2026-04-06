@@ -223,8 +223,24 @@ const push = async (ownerRepo: string) => {
   const cloneDir = `/tmp/spec-${repoName}-${Date.now()}`;
   const cloneUrl = provider.cloneUrl(`${owner}/${repoName}`);
   execSync(`git clone ${cloneUrl} ${cloneDir}`, { stdio: 'pipe' });
-  execSync(`git -C ${cloneDir} config user.email "agent@clawdevworker.local"`);
-  execSync(`git -C ${cloneDir} config user.name "CoderClaw Agent"`);
+  // Git identity — read from /git-config set (project > global > fallback)
+  const PROJECT_DATA = process.env.PROJECT_DATA_DIR ?? '/projects';
+  const projName = repoName;
+  const projCfg = `${PROJECT_DATA}/${projName}/.coderclaw/git-config.json`;
+  const globalCfg = `${PROJECT_DATA}/.coderclaw/git-config.json`;
+  let gitName = AGENT_LOGIN;
+  let gitEmail = `${AGENT_LOGIN}@localhost`;
+  if (existsSync(projCfg)) {
+    const cfg = JSON.parse(readFileSync(projCfg, 'utf8')) as { name: string; email: string };
+    gitName = cfg.name;
+    gitEmail = cfg.email;
+  } else if (existsSync(globalCfg)) {
+    const cfg = JSON.parse(readFileSync(globalCfg, 'utf8')) as { name: string; email: string };
+    gitName = cfg.name;
+    gitEmail = cfg.email;
+  }
+  execSync(`git -C ${cloneDir} config user.email "${gitEmail}"`);
+  execSync(`git -C ${cloneDir} config user.name "${gitName}"`);
 
   // Create base structure
   mkdirSync(`${cloneDir}/.coderclaw`, { recursive: true });
