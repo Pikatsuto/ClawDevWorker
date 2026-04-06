@@ -25,7 +25,7 @@ RUN apk add --no-cache \
         curl wget git ca-certificates gnupg bash \
         python3 py3-pip py3-virtualenv \
         build-base jq htop openssh-client \
-        nodejs npm \
+        nodejs npm su-exec \
  && npm install -g openclaw 2>/dev/null || ( \
         git clone --depth=1 https://github.com/openclaw/openclaw.git /opt/openclaw \
         && cd /opt/openclaw \
@@ -71,6 +71,5 @@ ENV OLLAMA_BASE_URL=http://ollama:11434 \
 COPY --from=build /opt/ /opt/
 COPY --chmod=755 services/agent/scripts/entrypoint.sh /usr/local/bin/entrypoint
 
-USER rootless
 WORKDIR /home/rootless
 ENTRYPOINT ["entrypoint"]

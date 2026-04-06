@@ -31,6 +31,13 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 log() { echo "[agent] $(date '+%H:%M:%S') $*"; }
 
+# ── 0. Fix volume permissions (runs as root, then drops to rootless) ─────
+if [ "$(id -u)" = "0" ]; then
+    chown -R rootless:rootless /home/rootless/.openclaw 2>/dev/null || true
+    chown -R rootless:rootless /home/rootless/.local 2>/dev/null || true
+    exec su-exec rootless "$0" "$@"
+fi
+
 if [ -z "$FORGEJO_TOKEN" ]; then
     log "ERROR: FORGEJO_TOKEN not set."
     exit 1

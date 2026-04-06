@@ -24,6 +24,13 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 log() { echo "[chat] $(date '+%H:%M:%S') $*"; }
 
+# ── 0. Fix volume permissions (runs as root, then drops to rootless) ─────
+if [ "$(id -u)" = "0" ]; then
+    chown -R rootless:rootless /home/rootless/.openclaw 2>/dev/null || true
+    chown -R rootless:rootless /home/rootless/.local 2>/dev/null || true
+    exec su-exec rootless "$0" "$@"
+fi
+
 # ── 1. Start dockerd rootless ─────────────────────────────────────────────
 # Use the official dind-rootless entrypoint — it handles cgroups, containerd, networking
 log "Starting dockerd rootless..."
