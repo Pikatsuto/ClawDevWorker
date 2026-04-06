@@ -7,6 +7,11 @@
 # REQUIRED variables:
 #   CHAT_DOMAIN                 e.g. chat.example.com
 #   OPENCLAW_GATEWAY_PASSWORD   OpenClaw gateway password
+#   GIT_DOMAIN                  e.g. git.example.com
+#   FORGEJO_DB_PASSWORD         PostgreSQL password for Forgejo
+#   FORGEJO_SECRET_KEY          Forgejo secret key
+#   FORGEJO_INTERNAL_TOKEN      Forgejo internal token
+#   FORGEJO_RUNNER_TOKEN        Runner registration token (from Forgejo admin)
 #   GIT_PROVIDER_1_TOKEN        Forgejo agent account token (scope: repo)
 #   FORGEJO_TOKEN               alias of the above token
 #
@@ -16,12 +21,13 @@
 #   MODEL_LIGHT                 qwen3.5:4b
 #   MODEL_TRIVIAL               qwen3.5:2b
 #   MODEL_CPU                   qwen3.5:0.8b
-#   GIT_PROVIDER_1_URL          http://host-gateway:3000
+#   GIT_PROVIDER_1_URL          http://forgejo:3000
 #   GIT_PROVIDER_2              (empty = GitHub disabled)
 #   GIT_PROVIDER_2_APP_ID       (GitHub App ID)
 #   GIT_PROVIDER_2_INSTALLATION_ID
 #   AGENT_GIT_LOGIN             agent
-#   FORGEJO_HOST_PORT           3000
+#   FORGEJO_SSH_PORT            2222
+#   FORGEJO_RUNNER_NAME         cdw-runner
 #   COOLIFY_HOST_PORT           8000
 #   GITHUB_TOKEN                (empty)
 #   DEV_DOMAIN                  dev.example.com (wildcard DNS required)
@@ -30,8 +36,8 @@
 #
 # TrueNAS prerequisites:
 #   - NVIDIA driver: TrueNAS UI → System → NVIDIA Driver → Install
-#   - External Coolify and Forgejo networks already existing:
-#       docker network ls | grep -E "coolify|forgejo"
+#   - External Coolify network already existing:
+#       docker network ls | grep coolify
 ###############################################################################
 
 networks:
@@ -416,7 +422,7 @@ services:
       - VRAM_LIGHT=${VRAM_LIGHT:-3}
       - VRAM_TRIVIAL=${VRAM_TRIVIAL:-2}
       - GIT_PROVIDER_1=${GIT_PROVIDER_1:-forgejo}
-      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://host-gateway:3000}
+      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://forgejo:3000}
       - GIT_PROVIDER_1_TOKEN=${GIT_PROVIDER_1_TOKEN:-${FORGEJO_TOKEN:-}}
       - GIT_PROVIDER_1_WEBHOOK_SECRET=${GIT_PROVIDER_1_WEBHOOK_SECRET:-}
       - GIT_PROVIDER_2=${GIT_PROVIDER_2:-}
@@ -488,7 +494,7 @@ services:
       - MODEL_TRIVIAL=${MODEL_TRIVIAL:-qwen3.5:2b}
       - MODEL_CPU=${MODEL_CPU:-qwen3.5:0.8b}
       - GIT_PROVIDER_1=${GIT_PROVIDER_1:-forgejo}
-      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://host-gateway:3000}
+      - GIT_PROVIDER_1_URL=${GIT_PROVIDER_1_URL:-http://forgejo:3000}
       - GIT_PROVIDER_1_TOKEN=${GIT_PROVIDER_1_TOKEN:-${FORGEJO_TOKEN:-}}
       - GIT_PROVIDER_2=${GIT_PROVIDER_2:-}
       - GIT_PROVIDER_2_APP_ID=${GIT_PROVIDER_2_APP_ID:-}
