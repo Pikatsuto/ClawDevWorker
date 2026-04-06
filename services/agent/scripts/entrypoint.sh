@@ -38,27 +38,18 @@ fi
 
 # ── 1. Start dockerd rootless ─────────────────────────────────────────────
 log "Starting dockerd rootless..."
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
 
-DOCKER_SOCK="/run/user/$(id -u)/docker.sock"
-rootlesskit \
-    --net=slirp4netns \
-    --copy-up=/etc \
-    --copy-up=/run \
-    --propagation=rslave \
-    dockerd \
-        --host="unix://$DOCKER_SOCK" \
-        --experimental \
-        --storage-driver=overlay2 \
-        --iptables=false --ip6tables=false \
+dockerd-entrypoint.sh dockerd \
+    --experimental \
+    --storage-driver=fuse-overlayfs \
     > /tmp/dockerd-rootless.log 2>&1 &
 DOCKERD_PID=$!
-export DOCKER_HOST="unix://$DOCKER_SOCK"
+export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 
 log "Waiting for Docker socket..."
-for i in $(seq 1 30); do
+for i in $(seq 1 45); do
     docker info >/dev/null 2>&1 && break
     sleep 1
 done
